@@ -225,3 +225,23 @@ de trechos e proveniência sem introduzir memória cognitiva artificial.
 ## 7. TB-02 — autorização documental e incremento ADR-0001
 
 Proprietário autorizou explicitamente criar um dataset no Sofias Memory e ingerir um ADR não sensível do repositório para completar a validação de Knowledge Retrieval. Dataset fixo `jarvis-knowledge`; somente a seção ADR-0001 do arquivo aprovado `docs/product-manager/07-JARVIS-ADRs.md`; comandos confirmados e sem retry automático. Foram implementados adapter e testes offline para Dataset Create, Remember `mode=full` (Run assíncrono), inspeção de Run, contadores e recuperação com proveniência. **Execução e validação reais na VPS pendentes**. Sem merge na `main`, sem avanço para TB-03. Roteiro: `docs/implementation/TB-02-ADR-Knowledge-Validation.md`.
+
+## 9. TB-02 — Knowledge no contexto do chat (implementação CLI)
+
+A validação real da consulta documental ao ADR-0001 retornou
+`RESULTS_FOUND` com Query ID
+`a7a09ded-706f-4627-8772-39d27bcf7651`, contexto e referência
+com os mesmos Source/Document/Chunk IDs. O retrieval do dataset
+`jarvis-knowledge` está **validado no CLI documental**.
+
+Incremento seguinte implementado na branch: provider
+`KnowledgeAwareTextProvider` com opt-in exclusivo via
+`--chat --use-knowledge --knowledge-dataset jarvis-knowledge`.
+A composição preserva o histórico operacional do SQLite, trata
+documentos como evidência de baixa confiança e limita a contextualização
+ao dataset ativo de nome esperado, com referências ligadas ao contexto.
+
+Os testes offline do novo fluxo foram adicionados, mas aguardam
+validação Windows do proprietário. O smoke real conversacional e
+a integração do desktop ainda são pendentes. **TB-02 IN PROGRESS**;
+nenhuma autorização de merge ou avanço ao TB-03.
