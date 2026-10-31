@@ -26,6 +26,9 @@ def main() -> int:
     actions.add_argument("--configure-memory-key", action="store_true", help="Prompt for Sofias Memory key without echo")
     actions.add_argument("--memory-check", action="store_true", help="Verify Sofias Memory connectivity and capabilities")
     actions.add_argument("--memory-get", metavar="UUID", help="Read an existing Cognitive Memory by ID")
+    actions.add_argument("--memory-create", action="store_true", help="Create an explicitly confirmed cognitive memory")
+    actions.add_argument("--memory-operation", metavar="UUID", help="Inspect a local cognitive write intent")
+    parser.add_argument("--memory-type", choices=["profile", "semantic"], default="profile", help="Explicit cognitive type for --memory-create")
     actions.add_argument("--memory-recall", action="store_true", help="Prompt for read-only cognitive recall query")
     parser.add_argument("--memory-scope", action="append", default=None, help="Explicit Cognitive Memory scope for --memory-recall; repeatable")
     actions.add_argument("--chat", action="store_true", help="One conversational turn in console")
@@ -73,6 +76,96 @@ def main() -> int:
             result = SofiasMemoryConnection(url, key).diagnose()
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "COMPATIBLE" else 2
+
+        if args.memory_operation:
+            from jarvis.memory.journal import MemoryOperationJournal
+
+            operation = MemoryOperationJournal(database_path()).get(args.memory_operation)
+            print(json.dumps(operation or {"status": "NOT_FOUND"}, ensure_ascii=False, indent=2))
+            return 0 if operation else 2
+
+        if args.memory_create:
+            from uuid import uuid4
+
+            from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            if args.memory_scope is None or len(args.memory_scope) != 1:
+                print(json.dumps({"status": "EXACTLY_ONE_SCOPE_REQUIRED"}))
+                return 2
+            scope = args.memory_scope[0]
+            if scope != "global" and not (
+                scope.startswith("project:")
+                and 1 <= len(scope[8:]) <= 128
+                and all(c in "abcdefghijklmnopqrstuvwxyz0123456789._-" for c in scope[8:])
+            ):
+                print(json.dumps({"status": "INVALID_SCOPE"}))
+                return 2
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            client = CognitiveMemoryClient(url, key)
+            check = client.diagnose()
+            if check["status"] != "COMPATIBLE":
+                print(json.dumps({"status": check["status"]}))
+                return 2
+            content = input("Informação para lembrar: ").strip()
+            if not 1 <= len(content) <= 16384:
+                print(json.dumps({"status": "INVALID_CONTENT"}))
+                return 2
+            print(f"Destino: Sofias Memory | Escopo: {scope} | Tipo: {args.memory_type}")
+            print("Esta confirmação gravará uma memória cognitiva persistente.")
+            if input("Digite GRAVAR para autorizar: ").strip() != "GRAVAR":
+                print(json.dumps({"status": "CANCELLED"}))
+                return 0
+
+            operation_id = str(uuid4())
+            provenance = {
+                "origin_kind": "user_asserted",
+                "source_system": "jarvis",
+                "source_ref": f"memory-operation:{operation_id}",
+            }
+            payload = {
+                "memory_type": args.memory_type,
+                "scope": scope,
+                "content": content,
+                "provenance": provenance,
+                "idempotency_key": operation_id,
+            }
+            journal = MemoryOperationJournal(database_path())
+            journal.prepare(operation_id, url, payload)
+            journal.claim(operation_id)
+            try:
+                saved = client.create(
+                    memory_type=args.memory_type, scope=scope, content=content,
+                    provenance=provenance, idempotency_key=operation_id,
+                )
+            except CognitiveMemoryError as exc:
+                outcome = "unknown" if exc.code == "RESULT_UNKNOWN" else "rejected"
+                journal.resolve(operation_id, status=outcome, error_code=exc.code)
+                print(json.dumps({
+                    "status": "RESULT_UNKNOWN" if outcome == "unknown" else exc.code,
+                    "operation_id": operation_id,
+                    "retry_automatically": False,
+                }))
+                return 2
+            except Exception:
+                journal.resolve(operation_id, status="unknown", error_code="LOCAL_ERROR")
+                print(json.dumps({"status": "RESULT_UNKNOWN", "operation_id": operation_id,
+                                  "retry_automatically": False}))
+                return 2
+            journal.resolve(operation_id, status="confirmed", memory_id=saved["memory_id"])
+            print(json.dumps({"status": "CONFIRMED", "operation_id": operation_id,
+                              "memory_id": saved["memory_id"], "scope": saved["scope"]},
+                             ensure_ascii=False, indent=2))
+            return 0
 
         if args.memory_get or args.memory_recall:
             from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
