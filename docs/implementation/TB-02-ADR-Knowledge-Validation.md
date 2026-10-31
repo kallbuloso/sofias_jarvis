@@ -159,3 +159,42 @@ no commit `76cb87f`. A suíte pós-correção não foi reportada ainda.
 **Próximo teste autorizado:** validar pytest pós-correção e, somente
 se passar, executar `--knowledge-ingest-adr` com confirmação
 `INGESTIR ADR-0001`; registrar `run_id` sem repetir a operação.
+
+
+## Evidência real — Ingestão do ADR aceita, processamento pendente (2026-10-31)
+
+O proprietário executou a suíte completa no Windows e relatou
+`142 passed in 3.99s`. Em seguida, executou
+`--knowledge-ingest-adr`, conferiu a origem e autorizou literalmente
+`INGESTIR ADR-0001`.
+
+Payload de origem selecionado pelo JARVIS:
+- Documento: `JARVIS ADR-0001 — Modular Monolith`
+- Caminho: `docs/product-manager/07-JARVIS-ADRs.md`
+- SHA-256 do recorte: `a684bed7596e6d2f8f1d2a1d44a8ec65e96bf57851d8abd822bcd58c290269ed`
+- Tamanho: 2.882 bytes
+- Dataset previamente confirmado: `jarvis-knowledge`
+  (`21100a21-d6e3-4dcc-a730-fe2f26111b5c`)
+
+Retorno real da operação:
+- `status=ACCEPTED`
+- `run_id=21899eed-281f-4399-a6f4-8d73750da71b`
+- `pipeline_status=queued`
+- `dataset_id=null`, `source_id=null` na resposta inicial
+
+**Aceitação de submissão: PASS.** O retorno `queued` não comprova
+processamento, persistência de chunks ou disponibilidade para retrieval.
+As identidades de dataset e source no resultado de submissão ainda
+não estavam materializadas. Não reexecutar `--knowledge-ingest-adr`
+para verificar andamento.
+
+**Próxima verificação estritamente read-only:**
+
+```powershell
+.\.venv\Scripts\python.exe main.py --knowledge-run 21899eed-281f-4399-a6f4-8d73750da71b
+```
+
+Se retornar `succeeded`, consultar `--knowledge-stats`;
+somente após fonte e chunks ativos, executar `--knowledge-query`
+com slug `jarvis-knowledge` e inspecionar proveniência dos resultados.
+Se `failed`, capturar `error_code`, sem novo envio/retry.
