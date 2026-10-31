@@ -26,26 +26,59 @@ def _json(value: dict) -> str:
 
 class ReplyWorker(QObject):
     delta = Signal(str, str)
-    done = Signal(str, str, str)
+    done = Signal(str, str, str, str)
 
-    def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str):
+    def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
+                 memory_scope: str | None = None):
         super().__init__()
         self.conversation_id = conversation_id
         self.prompt = prompt
         self.model = model
         self.api_key = api_key
+        self.memory_scope = memory_scope
         self.cancelled = threading.Event()
 
     @Slot()
     def run(self) -> None:
         result = "completed"
         error_code = ""
+        memory_provider = None
+        memory_status = "NOT_REQUESTED"
+        memory_key = None
         try:
             from openai import OpenAI
 
             client = OpenAI(api_key=self.api_key, timeout=30.0)
+            provider = OpenAIResponsesAdapter(client)
+
+            if self.memory_scope is not None:
+                from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
+                from jarvis.memory.connection import configured_memory_url
+                from jarvis.memory.context import MemoryAwareTextProvider
+
+                try:
+                    memory_url = configured_memory_url()
+                    memory_key = WindowsCredentialStore().get_memory_key() if memory_url else None
+                except Exception:
+                    memory_url = None
+                    memory_key = None
+
+                if memory_url and memory_key:
+                    reader = CognitiveMemoryClient(memory_url, memory_key)
+                else:
+                    class UnavailableReader:
+                        def recall(self, **kwargs):
+                            raise CognitiveMemoryError("SERVICE_UNAVAILABLE")
+                    reader = UnavailableReader()
+
+                memory_provider = MemoryAwareTextProvider(
+                    provider, reader, scopes=[self.memory_scope],
+                )
+                provider = memory_provider
+                memory_status = "NOT_ATTEMPTED"
+
             store = SQLiteConversationStore(database_path())
-            runtime = ConversationRuntime(store, OpenAIResponsesAdapter(client))
+            runtime = ConversationRuntime(store, provider)
             with closing(runtime.reply(
                 conversation_id=self.conversation_id,
                 text=self.prompt,
@@ -60,9 +93,11 @@ class ReplyWorker(QObject):
             result = "failed"
             error_code = type(exc).__name__
         finally:
+            if memory_provider is not None:
+                memory_status = memory_provider.last_retrieval_status or "NOT_ATTEMPTED"
             self.api_key = ""
-            self.done.emit(self.conversation_id, result, error_code)
-
+            memory_key = None
+            self.done.emit(self.conversation_id, result, error_code, memory_status)
 
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
@@ -88,8 +123,17 @@ class JarvisBridge(QObject):
             has_key = bool(WindowsCredentialStore().get_openai_key())
         except Exception:
             has_key = False
+        from jarvis.memory.connection import configured_memory_url
+
+        try:
+            memory_configured = bool(
+                configured_memory_url() and WindowsCredentialStore().get_memory_key()
+            )
+        except Exception:
+            memory_configured = False
         return _json({
             "ok": True,
+            "memoryConfigured": memory_configured,
             "conversations": self._store.list_conversations(),
             "model": os.getenv("JARVIS_MODEL", ""),
             "credentialConfigured": has_key,
@@ -112,6 +156,26 @@ class JarvisBridge(QObject):
 
     @Slot(str, str, str, result=str)
     def sendMessage(self, conversation_id: str, prompt: str, model: str) -> str:
+        """Original TB-01 text-only path. No memory access."""
+        return self._dispatch(conversation_id, prompt, model, memory_scope=None)
+
+    @Slot(str, str, str, str, result=str)
+    def sendMessageWithMemory(
+        self, conversation_id: str, prompt: str, model: str, memory_scope: str,
+    ) -> str:
+        """Read-only contextual retrieval with the user's explicit scope."""
+        from jarvis.memory.cognitive import _scope
+
+        try:
+            validated_scope = _scope(memory_scope)
+        except ValueError:
+            return _json({"ok": False, "error": "invalid_memory_scope"})
+        return self._dispatch(conversation_id, prompt, model, memory_scope=validated_scope)
+
+    def _dispatch(
+        self, conversation_id: str, prompt: str, model: str, *,
+        memory_scope: str | None,
+    ) -> str:
         if self.active or self._closing:
             return _json({"ok": False, "error": "busy"})
         if not model.strip() or not prompt.strip():
@@ -125,7 +189,10 @@ class JarvisBridge(QObject):
         if not key:
             return _json({"ok": False, "error": "credential_not_configured"})
 
-        worker = ReplyWorker(conversation_id, prompt.strip(), model.strip(), key)
+        worker = ReplyWorker(
+            conversation_id, prompt.strip(), model.strip(), key,
+            memory_scope=memory_scope,
+        )
         thread = QThread(self)
         worker.moveToThread(thread)
         self._worker = worker
@@ -145,11 +212,13 @@ class JarvisBridge(QObject):
             "type": "delta", "conversationId": conversation_id, "text": delta,
         }))
 
-    @Slot(str, str, str)
-    def _on_done(self, conversation_id: str, result: str, error_code: str) -> None:
+    @Slot(str, str, str, str)
+    def _on_done(self, conversation_id: str, result: str, error_code: str,
+                 memory_status: str) -> None:
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
+            "memoryStatus": memory_status,
         }))
 
     def _on_thread_finished(self, thread: QThread) -> None:
