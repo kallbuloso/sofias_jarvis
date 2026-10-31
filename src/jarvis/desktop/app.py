@@ -48,7 +48,7 @@ class LocalOnlyPage(QWebEnginePage):
 class JarvisWindow(QMainWindow):
     def __init__(self, assets_root: Path):
         super().__init__()
-        self.setWindowTitle("JARVIS · TB-01")
+        self.setWindowTitle("JARVIS · TB-02")
         self.resize(1280, 820)
         self._bridge = JarvisBridge(self)
         self._bridge.attach_window(self)

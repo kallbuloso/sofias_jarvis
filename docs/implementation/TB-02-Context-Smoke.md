@@ -44,3 +44,22 @@ claiming retrieved memories. Do not put API keys into CLI arguments.
 
 No real Supersede or Forget is included in this smoke. Both require
 a separate deliberate confirmation and verification strategy.
+
+
+## Evidence observed from the owner (2026-10-31)
+
+The owner submitted actual results from the deployed Sofias Memory service:
+
+- \`--memory-get ab89ac04-7134-49c6-9fa2-2880a296d50a\`: \`FOUND\`,
+  active global profile with the teal preference and traceable
+  \`source_ref: memory-operation:d168be4b-e411-478c-b881-e1d61f91b172\`.
+- \`--chat --model gpt-6-luna --use-memory --memory-scope global\`:
+  User asked about preferred color for graphical interfaces.
+  JARVIS answered that teal is the stored preference.
+  Explicit post-turn evidence: \`memory_retrieval: RESULTS_FOUND\`,
+  \`memory_ids: [ab89ac04-7134-49c6-9fa2-2880a296d50a]\`,
+  \`scopes: [global]\`.
+
+**Observed:** real Get and memory-assisted inference passed in the console.
+**Not yet observed:** latest full pytest output, desktop memory mode,
+knowledge retrieval, Supersede, Forget, and failure-mode desktop behavior.
