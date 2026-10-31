@@ -60,5 +60,10 @@ If an error is returned, capture the safe status; do not share API keys.
 - No dataset query has yet been observed from the deployed service.
 - The Knowledge results are exposed through CLI, not yet selected for
   context inside the desktop UI.
-- Supersede/Forget are not yet proven in real guarded workflows.
+- Supervised Supersede/Forget lifecycle **has been verified against the real service** (2026-10-31); see `TB-02-Supersede-Forget-Smoke.md`.
 - TB-02 remains IN PROGRESS; no merge to main is authorized.
+
+
+## Observação real de datasets — 2026-10-31
+
+O proprietário executou `--knowledge-datasets` com sucesso e recebeu `total: 4`, todos os registros `production-smoke-*` com `status: deleted`. Isso comprova leitura do catálogo, **não** recuperação documental com proveniência: nenhum dataset ativo foi encontrado na listagem. Não criar dados fictícios sem autorização e não confundir esses datasets com memórias cognitivas pessoais.

@@ -187,3 +187,36 @@ O estado **NOT STARTED** nas seções originais de planejamento foi substituído
 O proprietário aprovou o Slice TB-02 após detalhamento do escopo; a instância HTTPS real do Sofias Memory v0.7.0 retornou `api_contract_version=1`, `contracts.cognitive_memory=1` e cinco capabilities cognitivas, sem ausências. A integração de conexão e diagnóstico foi validada na VPS; a suíte local passou com **55 testes**, antes do incremento de escrita controlada. A consulta cognitiva `global` sobre cor preferida retornou `NO_RESULTS`, o que é um resultado vazio válido e não prova ausência em outros escopos ou Knowledge.
 
 Implementação de Cognitive Memory está em andamento na branch `feat/tb-02-memory-knowledge`: adapter dos cinco métodos, leitura por CLI e criação explícita mediante confirmação e journal operacional local. **Novos testes e criação real ainda exigem validação pelo proprietário; não declarar Product Done.** Documento de execução: `docs/implementation/TB-02-Cognitive-Adapter.md`.
+
+
+---
+
+## 6. Atualização factual TB-02 — ciclo cognitivo validado (2026-10-31)
+
+Este adendo registra execução posterior à baseline inicial sem reabrir
+a aprovação do roadmap e sem autorizar merge ou TB-03.
+
+- **Cognitive Memory:** Create/Get/Recall global, contexto em chat e
+  desktop, Supersede e Forget de amostras temporárias concluídos
+  contra o Sofias Memory v0.7.0. Um par A→B foi esquecido separadamente
+  com tombstones sem conteúdo e sem escopo ativo. Memória pessoal
+  \`global/profile\` (preferência teal) permaneceu ativa e intacta.
+- **Segurança operacional:** confirmação textual por operação, journal
+  SQLite de idempotência, allowlist local e verificação de proveniência
+  no serviço antes de mudar memórias temporárias.
+- **Validação:** o proprietário reportou \`127 passed in 3.90s\` no Windows
+  após a correção do teste multiline. Build frontend anterior também
+  havia passado (\`vite build\`).
+- **Knowledge Retrieval:** adapter CLI para dataset discovery e recall
+  em modo chunks implementado, mas os quatro datasets reais listados
+  estavam \`deleted\`; ainda não há evidência de recuperação com
+  referências de um dataset ativo.
+- **Estado:** TB-02 **IN PROGRESS** até evidência documental e critérios
+  restantes. TB-03 a TB-08 não estão autorizados para implementação.
+  \`main\` não foi alterada.
+- **Registro detalhado:** \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`.
+
+**Próximo passo legítimo:** escolher com o proprietário um documento
+real, não sensível, e um dataset ativo no Sofias Memory (ou aprovar
+expressamente sua criação/ingestão), então validar a cadeia documental
+de trechos e proveniência sem introduzir memória cognitiva artificial.
