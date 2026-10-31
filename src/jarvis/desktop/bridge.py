@@ -27,15 +27,18 @@ def _json(value: dict) -> str:
 class ReplyWorker(QObject):
     delta = Signal(str, str)
     done = Signal(str, str, str, str)
+    knowledgeDone = Signal(str, str)
 
     def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
-                 memory_scope: str | None = None):
+                 memory_scope: str | None = None,
+                 knowledge_dataset: str | None = None):
         super().__init__()
         self.conversation_id = conversation_id
         self.prompt = prompt
         self.model = model
         self.api_key = api_key
         self.memory_scope = memory_scope
+        self.knowledge_dataset = knowledge_dataset
         self.cancelled = threading.Event()
 
     @Slot()
@@ -43,6 +46,7 @@ class ReplyWorker(QObject):
         result = "completed"
         error_code = ""
         memory_provider = None
+        knowledge_provider = None
         memory_status = "NOT_REQUESTED"
         memory_key = None
         try:
@@ -79,6 +83,34 @@ class ReplyWorker(QObject):
                 provider = memory_provider
                 memory_status = "NOT_ATTEMPTED"
 
+            if self.knowledge_dataset is not None:
+                from jarvis.memory.connection import configured_memory_url
+                from jarvis.memory.knowledge import KnowledgeClient, KnowledgeError
+                from jarvis.memory.knowledge_context import KnowledgeAwareTextProvider
+
+                try:
+                    knowledge_url = configured_memory_url()
+                    knowledge_key = (WindowsCredentialStore().get_memory_key()
+                                     if knowledge_url else None)
+                except Exception:
+                    knowledge_url = None
+                    knowledge_key = None
+
+                if knowledge_url and knowledge_key:
+                    knowledge_reader = KnowledgeClient(knowledge_url, knowledge_key)
+                else:
+                    class UnavailableKnowledgeReader:
+                        def list_datasets(self, **kwargs):
+                            raise KnowledgeError("SERVICE_UNAVAILABLE")
+
+                        def query_chunks(self, **kwargs):
+                            raise KnowledgeError("SERVICE_UNAVAILABLE")
+                    knowledge_reader = UnavailableKnowledgeReader()
+                knowledge_provider = KnowledgeAwareTextProvider(
+                    provider, knowledge_reader, datasets=[self.knowledge_dataset],
+                )
+                provider = knowledge_provider
+
             store = SQLiteConversationStore(database_path())
             runtime = ConversationRuntime(store, provider)
             with closing(runtime.reply(
@@ -97,8 +129,21 @@ class ReplyWorker(QObject):
         finally:
             if memory_provider is not None:
                 memory_status = memory_provider.last_retrieval_status or "NOT_ATTEMPTED"
+            if self.knowledge_dataset is not None:
+                evidence = {
+                    "knowledgeStatus": (knowledge_provider.last_retrieval_status
+                                        if knowledge_provider is not None else None)
+                                       or "NOT_ATTEMPTED",
+                    "queryId": (knowledge_provider.last_query_id
+                                if knowledge_provider is not None else None),
+                    "references": (knowledge_provider.last_references
+                                   if knowledge_provider is not None else []),
+                    "dataset": self.knowledge_dataset,
+                }
+                self.knowledgeDone.emit(self.conversation_id, _json(evidence))
             self.api_key = ""
             memory_key = None
+            knowledge_key = None
             self.done.emit(self.conversation_id, result, error_code, memory_status)
 
 class JarvisBridge(QObject):
@@ -159,7 +204,8 @@ class JarvisBridge(QObject):
     @Slot(str, str, str, result=str)
     def sendMessage(self, conversation_id: str, prompt: str, model: str) -> str:
         """Original TB-01 text-only path. No memory access."""
-        return self._dispatch(conversation_id, prompt, model, memory_scope=None)
+        return self._dispatch(conversation_id, prompt, model, memory_scope=None,
+                              knowledge_dataset=None)
 
     @Slot(str, str, str, str, result=str)
     def sendMessageWithMemory(
@@ -172,11 +218,33 @@ class JarvisBridge(QObject):
             validated_scope = _scope(memory_scope)
         except ValueError:
             return _json({"ok": False, "error": "invalid_memory_scope"})
-        return self._dispatch(conversation_id, prompt, model, memory_scope=validated_scope)
+        return self._dispatch(conversation_id, prompt, model, memory_scope=validated_scope,
+                              knowledge_dataset=None)
+
+    @Slot(str, str, str, str, str, result=str)
+    def sendMessageWithContext(
+        self, conversation_id: str, prompt: str, model: str,
+        memory_scope: str, knowledge_dataset: str,
+    ) -> str:
+        """Explicit per-turn opt-in for Cognitive Memory and/or Knowledge."""
+        from jarvis.memory.cognitive import _scope
+
+        if not memory_scope and not knowledge_dataset:
+            return _json({"ok": False, "error": "context_not_selected"})
+        try:
+            validated_scope = _scope(memory_scope) if memory_scope else None
+        except ValueError:
+            return _json({"ok": False, "error": "invalid_memory_scope"})
+        if knowledge_dataset and knowledge_dataset != "jarvis-knowledge":
+            return _json({"ok": False, "error": "invalid_knowledge_dataset"})
+        return self._dispatch(conversation_id, prompt, model,
+                              memory_scope=validated_scope,
+                              knowledge_dataset=knowledge_dataset or None)
 
     def _dispatch(
         self, conversation_id: str, prompt: str, model: str, *,
         memory_scope: str | None,
+        knowledge_dataset: str | None,
     ) -> str:
         if self.active or self._closing:
             return _json({"ok": False, "error": "busy"})
@@ -194,6 +262,7 @@ class JarvisBridge(QObject):
         worker = ReplyWorker(
             conversation_id, prompt.strip(), model.strip(), key,
             memory_scope=memory_scope,
+            knowledge_dataset=knowledge_dataset,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -202,6 +271,7 @@ class JarvisBridge(QObject):
         thread.started.connect(worker.run)
         worker.delta.connect(self._on_delta)
         worker.done.connect(self._on_done)
+        worker.knowledgeDone.connect(self._on_knowledge_done)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(lambda: self._on_thread_finished(thread))
@@ -212,6 +282,23 @@ class JarvisBridge(QObject):
     def _on_delta(self, conversation_id: str, delta: str) -> None:
         self.streamEvent.emit(_json({
             "type": "delta", "conversationId": conversation_id, "text": delta,
+        }))
+
+    @Slot(str, str)
+    def _on_knowledge_done(self, conversation_id: str, raw_evidence: str) -> None:
+        try:
+            data = json.loads(raw_evidence)
+        except ValueError:
+            return
+        if not isinstance(data, dict):
+            return
+        self.streamEvent.emit(_json({
+            "type": "knowledge",
+            "conversationId": conversation_id,
+            "knowledgeStatus": data.get("knowledgeStatus", "NOT_ATTEMPTED"),
+            "queryId": data.get("queryId"),
+            "references": data.get("references", []),
+            "dataset": data.get("dataset"),
         }))
 
     @Slot(str, str, str, str)
