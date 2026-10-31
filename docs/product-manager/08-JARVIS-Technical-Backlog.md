@@ -245,3 +245,28 @@ Os testes offline do novo fluxo foram adicionados, mas aguardam
 validação Windows do proprietário. O smoke real conversacional e
 a integração do desktop ainda são pendentes. **TB-02 IN PROGRESS**;
 nenhuma autorização de merge ou avanço ao TB-03.
+
+## 10. TB-02 — implementação desktop Knowledge (pendente de validação)
+
+Após a validação CLI `164 passed in 6.06s`, o proprietário comprovou
+que `--chat --use-knowledge --knowledge-dataset jarvis-knowledge`
+recuperou o ADR-0001 e exibiu um Source/Document/Chunk verificado
+na resposta. Sem Knowledge, `--chat` funcionou normalmente sem
+metadados de recuperação.
+
+Novo incremento na branch: WebChannel
+`sendMessageWithContext(conversation_id, prompt, model, memory_scope,
+knowledge_dataset)` com validação de scope/dataset e capacidade de
+ativar Knowledge independentemente da Cognitive Memory.
+`ReplyWorker` consulta o dataset aprovado no serviço; as
+referências e o Query ID trafegam em sinal separado, sem segredos,
+com contexto apenas efêmero. No Vue, switches separados começam
+OFF, o dataset exige seleção explícita e fontes verificadas podem
+ser expandidas sem transformar `url=null` em link.
+
+Novos testes offline do worker e boundary do bridge adicionados.
+**Testes e Vite build deste incremento ainda não executados no Windows;**
+aceite visual/funcional do desktop pendente. Ver
+`docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
+
+TB-02 **IN PROGRESS**; `main` e TB-03 permanecem intocados.
