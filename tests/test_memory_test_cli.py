@@ -169,4 +169,8 @@ def test_forget_needs_exact_target_uuid_confirmation(monkeypatch, tmp_path, caps
         ("preview", target, "forget"),
         ("forget", target),
     ]
-    assert json.loads(capsys.readouterr().out.splitlines()[-1])["status"] == "CONFIRMED"
+    output = capsys.readouterr().out
+    # Preview and result are separate, multi-line JSON documents.
+    result = json.loads(output[output.rfind("\n{") + 1:])
+    assert result["status"] == "CONFIRMED"
+    assert result["memory_id"] == target
