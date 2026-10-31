@@ -52,11 +52,18 @@ def main() -> int:
     parser.add_argument("--conversation-id", help="Existing conversation ID for --chat")
     parser.add_argument("--model", help="OpenAI model; or configure JARVIS_MODEL")
     parser.add_argument("--use-memory", action="store_true", help="Explicitly opt into read-only cognitive recall for --chat")
+    parser.add_argument("--use-knowledge", action="store_true", help="Opt into documentary Knowledge Retrieval for --chat")
     args = parser.parse_args()
 
     try:
         if args.use_memory and not args.chat:
             raise ValueError("--use-memory requires --chat")
+        if args.use_knowledge and not args.chat:
+            raise ValueError("--use-knowledge requires --chat")
+        if args.use_knowledge and args.knowledge_dataset != ["jarvis-knowledge"]:
+            raise ValueError("--use-knowledge requires exactly --knowledge-dataset jarvis-knowledge")
+        if args.chat and args.knowledge_dataset and not args.use_knowledge:
+            raise ValueError("--knowledge-dataset for chat requires --use-knowledge")
         if args.configure_openai_key:
             from jarvis.secrets.windows import WindowsCredentialStore
 
@@ -414,6 +421,7 @@ def main() -> int:
                 raise ValueError("Message cannot be empty")
             provider = OpenAIResponsesAdapter(OpenAI(api_key=key))
             memory_provider = None
+            knowledge_provider = None
             if args.use_memory:
                 if not args.memory_scope:
                     raise ValueError("--use-memory requires --memory-scope")
@@ -440,6 +448,32 @@ def main() -> int:
                     reader = UnavailableMemoryReader()
                 memory_provider = MemoryAwareTextProvider(provider, reader, scopes=scopes)
                 provider = memory_provider
+            if args.use_knowledge:
+                from jarvis.memory.connection import configured_memory_url
+                from jarvis.memory.knowledge import KnowledgeClient, KnowledgeError
+                from jarvis.memory.knowledge_context import KnowledgeAwareTextProvider
+
+                knowledge_key = None
+                try:
+                    knowledge_url = configured_memory_url()
+                    if knowledge_url:
+                        knowledge_key = WindowsCredentialStore().get_memory_key()
+                except Exception:
+                    knowledge_url = None
+
+                if knowledge_url and knowledge_key:
+                    knowledge_reader = KnowledgeClient(knowledge_url, knowledge_key)
+                else:
+                    class UnavailableKnowledgeReader:
+                        def list_datasets(self, **kwargs):
+                            raise KnowledgeError("SERVICE_UNAVAILABLE")
+                        def query_chunks(self, **kwargs):
+                            raise KnowledgeError("SERVICE_UNAVAILABLE")
+                    knowledge_reader = UnavailableKnowledgeReader()
+                knowledge_provider = KnowledgeAwareTextProvider(
+                    provider, knowledge_reader, datasets=args.knowledge_dataset,
+                )
+                provider = knowledge_provider
             runtime = ConversationRuntime(store, provider)
             print(f"Conversation: {conversation_id}")
             print("JARVIS: ", end="", flush=True)
@@ -451,6 +485,13 @@ def main() -> int:
                     "memory_retrieval": memory_provider.last_retrieval_status,
                     "memory_ids": memory_provider.last_memory_ids,
                     "scopes": memory_provider.scopes,
+                }, ensure_ascii=False))
+            if knowledge_provider is not None:
+                print(json.dumps({
+                    "knowledge_retrieval": knowledge_provider.last_retrieval_status,
+                    "query_id": knowledge_provider.last_query_id,
+                    "datasets": knowledge_provider.datasets,
+                    "references": knowledge_provider.last_references,
                 }, ensure_ascii=False))
         else:
             print(json.dumps({"phase": "TB-01 bootstrap", "store": str(store.path),
