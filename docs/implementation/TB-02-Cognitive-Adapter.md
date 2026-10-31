@@ -89,3 +89,22 @@ Memory writes. A Memory outage remains distinct from an empty result,
 and independent text chat is allowed to continue with an explicit
 unavailable signal. GUI integration and live context validation remain
 pending.
+
+
+## Supervised Supersede/Forget validation (new increment)
+
+The owner's \`110 passed\` / Vite build PASS and live dataset listing were
+recorded prior to these new changes. The datasets observed were four
+\`production-smoke-*\` records with status \`deleted\`; the Cognitive Memory
+preference was unaffected and lives outside datasets.
+
+This increment adds isolated ephemeral test items under the explicit
+\`project:jarvis\` scope and checks local allowlist + remote provenance,
+UUID identity, state and test-content marker before any mutation.
+\`Supersede\` creates a new test memory and records lineage;
+\`Forget\` scrubs the exact test UUID without modifying unrelated items.
+Both operations require an exact terminal confirmation and preserve
+idempotency journal behavior.
+
+**The new full suite and live operations remain pending validation.**
+See \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`.

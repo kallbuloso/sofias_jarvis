@@ -199,3 +199,20 @@ non-expanding warning elements and escaped Vue-text rendering of basic
 inline **bold** only. Full CommonMark, rich HTML and arbitrary clickable
 links are intentionally not supported; do not add \`v-html\` for
 untrusted model content. Rebuild the frontend after updating.
+
+## TB-02 supervised disposable memory lifecycle
+
+Supersede/Forget are **not** general-purpose CLI commands. They operate
+only on temporary fixed-content memories registered by the dedicated local
+TB-02 test flow. They require per-UUID explicit confirmation and are never
+used by ordinary chat.
+
+    .\.venv\Scripts\python.exe main.py --memory-test-list
+    .\.venv\Scripts\python.exe main.py --memory-test-create
+    .\.venv\Scripts\python.exe main.py --memory-test-supersede ID_A
+    .\.venv\Scripts\python.exe main.py --memory-test-forget ID_B
+    .\.venv\Scripts\python.exe main.py --memory-test-forget ID_A
+
+Do not execute the mutation commands before the new full pytest suite
+passes. See \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`
+for exact permissions, expected tombstone evidence, and safe-stop rules.
