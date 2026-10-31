@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _now() -> str:
@@ -91,6 +91,33 @@ class SQLiteConversationStore:
                     )
                 """)
                 db.execute("PRAGMA user_version = 2")
+                version = 2
+            if version == 2:
+                # Keep prior Create journal records; do not change their identities.
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN operation_kind TEXT NOT NULL DEFAULT 'create'")
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN target_memory_id TEXT")
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS tb02_test_memories (
+                        memory_id TEXT PRIMARY KEY,
+                        root_memory_id TEXT NOT NULL,
+                        service_url TEXT NOT NULL,
+                        marker TEXT NOT NULL,
+                        scope TEXT NOT NULL CHECK (scope = 'project:jarvis'),
+                        memory_type TEXT NOT NULL CHECK (memory_type = 'semantic'),
+                        lifecycle TEXT NOT NULL CHECK (
+                            lifecycle IN ('active','superseded','forgotten')
+                        ),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_tb02_mutation_pending
+                    ON cognitive_write_operations(target_memory_id)
+                    WHERE target_memory_id IS NOT NULL
+                    AND status IN ('prepared','in_flight','unknown')
+                """)
+                db.execute("PRAGMA user_version = 3")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
