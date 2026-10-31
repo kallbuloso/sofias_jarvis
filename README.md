@@ -84,3 +84,27 @@ health and authenticated capability negotiation only, without memory writes.
     .\.venv\Scripts\python.exe main.py --memory-check
 
 Expected status: COMPATIBLE. Never provide the API key in chat or command arguments.
+
+## TB-02 step 02 — Cognitive Memory adapter (under validation)
+
+The Core now has a separate API client for **Create / Get / typed Recall /
+Supersede / Forget**. It uses explicit scopes and provenance, checks the
+returned lifecycle, and requires a caller-owned UUID idempotency key on every
+mutation. It does not perform blind retries after uncertain writes.
+
+The first live smoke is intentionally **read-only**, without storing or
+deleting data in your Sofias Memory instance:
+
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope global
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope project:jarvis
+    .\.venv\Scripts\python.exe main.py --memory-get EXISTING_MEMORY_UUID
+
+The recall command prompts for the query locally, avoiding shell-history
+storage. Scope is mandatory and exact; global is never silently added to
+project-specific queries. Expect \`NO_RESULTS\` when there are no relevant
+memories; network failures and incompatible responses are *not* empty results.
+
+Mutating methods are **not yet wired to the chat UI/CLI**. Before using those
+against a live service, the JARVIS Core must persist authorization, operation
+identity and outcome evidence to reconcile uncertain results correctly.
+No conversational automatic cognitive writes are enabled.

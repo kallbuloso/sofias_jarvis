@@ -25,6 +25,9 @@ def main() -> int:
     actions.add_argument("--configure-memory-url", metavar="HTTPS_URL", help="Persist Sofias Memory HTTPS origin (not a secret)")
     actions.add_argument("--configure-memory-key", action="store_true", help="Prompt for Sofias Memory key without echo")
     actions.add_argument("--memory-check", action="store_true", help="Verify Sofias Memory connectivity and capabilities")
+    actions.add_argument("--memory-get", metavar="UUID", help="Read an existing Cognitive Memory by ID")
+    actions.add_argument("--memory-recall", action="store_true", help="Prompt for read-only cognitive recall query")
+    parser.add_argument("--memory-scope", action="append", default=None, help="Explicit Cognitive Memory scope for --memory-recall; repeatable")
     actions.add_argument("--chat", action="store_true", help="One conversational turn in console")
     actions.add_argument("--desktop", action="store_true", help="Launch local desktop UI")
     parser.add_argument("--conversation-id", help="Existing conversation ID for --chat")
@@ -70,6 +73,40 @@ def main() -> int:
             result = SofiasMemoryConnection(url, key).diagnose()
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "COMPATIBLE" else 2
+
+        if args.memory_get or args.memory_recall:
+            from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            if args.memory_recall and not args.memory_scope:
+                print(json.dumps({"status": "SCOPE_REQUIRED"}))
+                return 2
+            client = CognitiveMemoryClient(url, key)
+            compatibility = client.diagnose()
+            if compatibility["status"] != "COMPATIBLE":
+                print(json.dumps({"status": compatibility["status"]}))
+                return 2
+            try:
+                if args.memory_get:
+                    result = {"status": "FOUND", "memory": client.get(args.memory_get)}
+                else:
+                    query = input("Consulta: ").strip()
+                    hits = client.recall(query=query, scopes=args.memory_scope)
+                    result = {"status": "RESULTS_FOUND" if hits else "NO_RESULTS", "items": hits}
+            except CognitiveMemoryError as exc:
+                print(json.dumps({"status": exc.code}))
+                return 2
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
 
         if args.desktop:
             from jarvis.desktop.app import launch_desktop
