@@ -118,7 +118,9 @@ function handleStream(raw) {
   if (event.type === 'knowledge') {
     if (event.conversationId !== selected.value) return
     const descriptions = {
-      RESULTS_FOUND: 'Knowledge: documento recuperado com referência verificada.',
+      RESULTS_FOUND: Array.isArray(event.references) && event.references.length
+        ? 'Knowledge: documento recuperado com referência verificada.'
+        : 'Knowledge: trecho recuperado, mas sem referência fornecida.',
       NO_RESULTS: 'Knowledge: consulta concluída sem trechos correspondentes.',
       UNAVAILABLE: 'Knowledge indisponível; nenhuma fonte foi confirmada.',
       NOT_ATTEMPTED: 'A consulta documental não foi executada.',
@@ -289,7 +291,7 @@ onMounted(async () => {
               Configure a URL e chave do Sofias Memory pelo console.
             </span>
             <span class="memory-caption" v-else>
-              Desligado: esta conversa não consulta a memória.
+              Desligado: esta conversa não consulta memórias cognitivas.
             </span>
             <div v-if="useMemory && memoryNotice" class="memory-feedback"
               role="status" aria-live="polite">{{ memoryNotice }}</div>
@@ -303,6 +305,9 @@ onMounted(async () => {
               hide-details clearable :disabled="busy" class="memory-scope"/>
             <span v-if="useKnowledge" class="memory-caption">
               A pergunta consultará documentos do dataset selecionado; as evidências serão enviadas ao modelo.
+            </span>
+            <span v-else-if="!memoryConfigured" class="memory-caption">
+              Configure o Sofias Memory pelo console antes de usar Knowledge.
             </span>
             <span v-else class="memory-caption">
               Desligado: não consulta documentos do Sofias Memory.
