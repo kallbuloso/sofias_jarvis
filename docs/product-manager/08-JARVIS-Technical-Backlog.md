@@ -10,16 +10,16 @@
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | Revisar Pull Request do TB-01 e obter aprovação explícita antes do merge; planejar TB-02 separadamente |
+| **Próxima atividade** | Validar o Create/Get/Recall explícito do TB-02 no Windows; depois avançar Context Integration e Knowledge Retrieval sem antecipar Slices posteriores |
 
-> **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 a TB-08 são **itens de roadmap**, não Slices detalhados ou autorizados para implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
+> **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
 ## 1. Roadmap inicial do MVP
 
 | Slice | Entrega utilizável esperada | Estado de planejamento |
 |---|---|---|
 | **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
-| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **ROADMAP** — detalhar e aprovar antes de executar |
+| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **APPROVED / IN PROGRESS** — aprovação do proprietário após auditoria e diagnóstico da instância real; ver `docs/implementation/TB-02-Cognitive-Adapter.md` |
 | **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **ROADMAP** |
 | **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **ROADMAP** |
 | **TB-05 — Ferramentas de consulta** | Capacidades READ verificadas em dois domínios externos reais | **ROADMAP** |
@@ -178,3 +178,12 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 ## 4. Registro de conclusão do TB-01 (2026-10-31)
 
 O estado **NOT STARTED** nas seções originais de planejamento foi substituído por **PRODUCT DONE** após execução e evidência. O registro completo e as limitações estão em `docs/implementation/TB-01-Validation.md`. Este adendo não autoriza merge, não altera os Slices futuros e não aprova nova stack.
+
+
+---
+
+## 5. Handoff de execução TB-02 (2026-10-31)
+
+O proprietário aprovou o Slice TB-02 após detalhamento do escopo; a instância HTTPS real do Sofias Memory v0.7.0 retornou `api_contract_version=1`, `contracts.cognitive_memory=1` e cinco capabilities cognitivas, sem ausências. A integração de conexão e diagnóstico foi validada na VPS; a suíte local passou com **55 testes**, antes do incremento de escrita controlada. A consulta cognitiva `global` sobre cor preferida retornou `NO_RESULTS`, o que é um resultado vazio válido e não prova ausência em outros escopos ou Knowledge.
+
+Implementação de Cognitive Memory está em andamento na branch `feat/tb-02-memory-knowledge`: adapter dos cinco métodos, leitura por CLI e criação explícita mediante confirmação e journal operacional local. **Novos testes e criação real ainda exigem validação pelo proprietário; não declarar Product Done.** Documento de execução: `docs/implementation/TB-02-Cognitive-Adapter.md`.
