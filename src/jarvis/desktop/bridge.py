@@ -49,7 +49,9 @@ class ReplyWorker(QObject):
             from openai import OpenAI
 
             client = OpenAI(api_key=self.api_key, timeout=30.0)
-            provider = OpenAIResponsesAdapter(client)
+            from jarvis.conversation.grounding import GroundedTextProvider
+
+            provider = GroundedTextProvider(OpenAIResponsesAdapter(client))
 
             if self.memory_scope is not None:
                 from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
