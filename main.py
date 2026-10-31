@@ -28,6 +28,14 @@ def main() -> int:
     actions.add_argument("--memory-get", metavar="UUID", help="Read an existing Cognitive Memory by ID")
     actions.add_argument("--knowledge-datasets", action="store_true", help="List Sofias Memory datasets (read only)")
     actions.add_argument("--knowledge-query", action="store_true", help="Prompt for a Knowledge query in chunks mode")
+    actions.add_argument("--knowledge-create-dataset", action="store_true",
+                         help="Confirm creation of the dedicated jarvis-knowledge dataset")
+    actions.add_argument("--knowledge-ingest-adr", action="store_true",
+                         help="Confirm ingestion of only approved ADR-0001 into jarvis-knowledge")
+    actions.add_argument("--knowledge-run", metavar="UUID",
+                         help="Inspect a knowledge ingestion PipelineRun (no retry)")
+    actions.add_argument("--knowledge-stats", action="store_true",
+                         help="Inspect jarvis-knowledge dataset counters")
     actions.add_argument("--memory-create", action="store_true", help="Create an explicitly confirmed cognitive memory")
     actions.add_argument("--memory-test-create", action="store_true", help="Create a fixed, isolated disposable TB-02 test memory")
     actions.add_argument("--memory-test-supersede", metavar="UUID", help="Supersede ONLY a locally registered TB-02 test memory")
@@ -121,6 +129,60 @@ def main() -> int:
                 print(json.dumps({"status": str(exc)}))
                 return 2
             print(json.dumps(data, ensure_ascii=False, indent=2))
+            return 0
+
+        if (args.knowledge_create_dataset or args.knowledge_ingest_adr
+                or args.knowledge_run or args.knowledge_stats):
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.knowledge import KnowledgeError
+            from jarvis.memory.knowledge_ingestion import (
+                ADRKnowledgeClient, DATASET_SLUG, DATASET_NAME,
+                SOURCE_NAME, approved_adr,
+            )
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            client = ADRKnowledgeClient(url, key)
+            check = client.diagnose()
+            if check["status"] != "COMPATIBLE":
+                print(json.dumps({"status": check["status"]}))
+                return 2
+            try:
+                if args.knowledge_create_dataset:
+                    print(f"Dataset: {DATASET_SLUG} | Nome: {DATASET_NAME}")
+                    print("Esta operação poderá criar um namespace persistente no Sofias Memory.")
+                    if input(f"Digite CRIAR DATASET {DATASET_SLUG} para autorizar: ").strip() != f"CRIAR DATASET {DATASET_SLUG}":
+                        print(json.dumps({"status": "CANCELLED"}))
+                        return 0
+                    result = client.create_adr_dataset()
+                elif args.knowledge_ingest_adr:
+                    adr = approved_adr()
+                    print(f"Documento autorizado: {SOURCE_NAME}")
+                    print(f"Origem: {adr['source_path']}")
+                    print(f"SHA256: {adr['sha256']}")
+                    print(f"Bytes: {len(adr['content'].encode('utf-8'))}")
+                    print("Ingestão FULL pode consumir embeddings/LLM; não haverá retry automático.")
+                    if input("Digite INGESTIR ADR-0001 para autorizar: ").strip() != "INGESTIR ADR-0001":
+                        print(json.dumps({"status": "CANCELLED"}))
+                        return 0
+                    result = client.ingest_adr(adr)
+                elif args.knowledge_run:
+                    result = client.inspect_run(args.knowledge_run)
+                else:
+                    result = client.dataset_stats()
+            except KnowledgeError as exc:
+                print(json.dumps({"status": str(exc)}))
+                return 2
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if result["status"] in ("failed", "cancelled", "FAILED", "CANCELLED"):
+                return 2
             return 0
 
         if args.memory_test_list:
