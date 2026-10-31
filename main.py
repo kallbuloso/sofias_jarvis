@@ -1,4 +1,4 @@
-"""JARVIS TB-01 development entrypoint (desktop UI still pending)."""
+"""JARVIS development entrypoint."""
 
 from __future__ import annotations
 
@@ -16,12 +16,15 @@ from jarvis.conversation.store import SQLiteConversationStore  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="JARVIS TB-01 development bootstrap")
+    parser = argparse.ArgumentParser(description="JARVIS development bootstrap")
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--diagnose", action="store_true", help="Inspect operational store")
     actions.add_argument("--create-conversation", metavar="TITLE", help="Create local conversation")
     actions.add_argument("--list-conversations", action="store_true", help="List local conversations")
     actions.add_argument("--configure-openai-key", action="store_true", help="Prompt for key without echo")
+    actions.add_argument("--configure-memory-url", metavar="HTTPS_URL", help="Persist Sofias Memory HTTPS origin (not a secret)")
+    actions.add_argument("--configure-memory-key", action="store_true", help="Prompt for Sofias Memory key without echo")
+    actions.add_argument("--memory-check", action="store_true", help="Verify Sofias Memory connectivity and capabilities")
     actions.add_argument("--chat", action="store_true", help="One conversational turn in console")
     actions.add_argument("--desktop", action="store_true", help="Launch local desktop UI")
     parser.add_argument("--conversation-id", help="Existing conversation ID for --chat")
@@ -36,6 +39,37 @@ def main() -> int:
             WindowsCredentialStore().set_openai_key(secret)
             print("Key securely stored in Windows Credential Manager")
             return 0
+
+        if args.configure_memory_url is not None:
+            from jarvis.memory.connection import save_memory_url
+
+            url = save_memory_url(args.configure_memory_url)
+            print(json.dumps({"status": "CONFIGURED", "url": url}))
+            return 0
+
+        if args.configure_memory_key:
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            secret = getpass("Sofias Memory API key (not echoed): ")
+            WindowsCredentialStore().set_memory_key(secret)
+            print("Sofias Memory key securely stored in Windows Credential Manager")
+            return 0
+
+        if args.memory_check:
+            from jarvis.memory.connection import SofiasMemoryConnection, configured_memory_url
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING", "url": url}))
+                return 2
+            result = SofiasMemoryConnection(url, key).diagnose()
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["status"] == "COMPATIBLE" else 2
 
         if args.desktop:
             from jarvis.desktop.app import launch_desktop
