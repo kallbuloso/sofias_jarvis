@@ -55,3 +55,35 @@ Still needed before TB-02 Product Done:
   evidence, without affecting unrelated memory records.
 - Validate Knowledge Retrieval from a real dataset with source references.
 - Final UI/product acceptance for provenance and degraded service behavior.
+
+
+## Owner observation and follow-up (2026-10-31)
+
+The owner reported \`85 passed in 2.61s\` on Windows **before**
+the patches listed below. Screenshots show:
+
+- Desktop chat worked with memory OFF, including a later answer that
+  retrospectively claimed the assistant had "guessed" the preference.
+  That explanation is not grounded in source evidence; do not represent
+  a model's self-report about its hidden reasoning as an observed fact.
+- With Memory ON and scope Global, the app answered the teal-preference
+  query and displayed "memórias recuperadas para esta resposta."
+- The status was rendered in a vertically oversized blue \`v-alert\` above
+  the conversation; it obscured important history content.
+- The user mentioned npm build but did not include the build output.
+  Updated desktop assets being displayed support that a build was
+  loaded, but do not constitute a captured build log.
+
+### Fix under validation
+
+1. Move the retrieval notice to a bounded, compact status line inside
+   the memory controls, eliminating the oversized alert.
+2. Add an ephemeral trusted source-attribution instruction to the
+   desktop provider: distinguish user claims, earlier assistant claims
+   and actually retrieved memories. No assumption that the prompt is
+   a deterministic factuality checker.
+3. Add tests for the prompt boundary and ordinary desktop behavior.
+
+**Re-run the full Windows test suite, npm build, and desktop visual smoke.**
+Do not mark this visual bug resolved or declare TB-02 Product Done
+before those validations are reported.

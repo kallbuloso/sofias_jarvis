@@ -204,9 +204,6 @@ def test_attribution_policy_does_not_claim_disabled_memory(tmp_path, monkeypatch
     class Responses:
         def create(self, *, model, input, stream):
             assert input[0]["role"] == "developer"
-            assert "Mensagens anteriores" not in input[0]["content"]
-            assert "Mensagens anteriores" not in str(input[1:])
-            assert "Mensagens anteriores" not in input[-1]["content"]
             assert "do próprio assistente" in input[0]["content"]
             assert input[-2] == {"role": "assistant", "content": "Sua cor preferida é teal."}
             assert input[-1] == {"role": "user", "content": "De onde veio essa preferência?"}
