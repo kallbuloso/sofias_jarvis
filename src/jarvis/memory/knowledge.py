@@ -46,7 +46,8 @@ def _score(value: Any) -> float:
 class KnowledgeClient(SofiasMemoryConnection):
     """HTTP interface for explicit dataset listing and chunk-only retrieval."""
 
-    def _request(self, method: str, path: str, *, body: dict | None = None) -> dict:
+    def _request(self, method: str, path: str, *, body: dict | None = None,
+                 accepted_status: tuple[int, ...] = (200,)) -> dict:
         headers = {"Accept": "application/json", "X-API-Key": self._api_key}
         encoded = None
         if body is not None:
@@ -55,7 +56,7 @@ class KnowledgeClient(SofiasMemoryConnection):
         request = Request(self.base_url + path, data=encoded, headers=headers, method=method)
         try:
             with self._opener.open(request, timeout=20.0) as response:
-                if response.status != 200:
+                if response.status not in accepted_status:
                     raise KnowledgeError("HTTP_FAILED")
                 raw = response.read(_MAX_RESPONSE + 1)
         except HTTPError as exc:
