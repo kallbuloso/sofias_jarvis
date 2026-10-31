@@ -33,7 +33,7 @@ _MEMORY_BOUNDARY = (
     "Se a consulta estiver indisponível ou não trouxer resultados, "
     "não afirme que recuperou uma memória."
 )
-_MAX_ITEM_CONTENT = 1200
+_MAX_ITEM_CONTENT_BYTES = 1200
 _MAX_CONTEXT_BYTES = 8500
 
 
@@ -89,7 +89,7 @@ class MemoryAwareTextProvider:
                 records.append({
                     "memory_id": memory_id,
                     "scope": mem["scope"],
-                    "content": content[:_MAX_ITEM_CONTENT],
+                    "content": content.encode("utf-8")[:_MAX_ITEM_CONTENT_BYTES].decode("utf-8", "ignore"),
                     "origin_kind": mem.get("provenance", {}).get("origin_kind"),
                     "relevance": hit.get("relevance"),
                 })
