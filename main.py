@@ -29,6 +29,10 @@ def main() -> int:
     actions.add_argument("--knowledge-datasets", action="store_true", help="List Sofias Memory datasets (read only)")
     actions.add_argument("--knowledge-query", action="store_true", help="Prompt for a Knowledge query in chunks mode")
     actions.add_argument("--memory-create", action="store_true", help="Create an explicitly confirmed cognitive memory")
+    actions.add_argument("--memory-test-create", action="store_true", help="Create a fixed, isolated disposable TB-02 test memory")
+    actions.add_argument("--memory-test-supersede", metavar="UUID", help="Supersede ONLY a locally registered TB-02 test memory")
+    actions.add_argument("--memory-test-forget", metavar="UUID", help="Forget ONLY a locally registered TB-02 test memory")
+    actions.add_argument("--memory-test-list", action="store_true", help="List only local TB-02 disposable memory IDs")
     actions.add_argument("--memory-operation", metavar="UUID", help="Inspect a local cognitive write intent")
     parser.add_argument("--memory-type", choices=["profile", "semantic"], default="profile", help="Explicit cognitive type for --memory-create")
     actions.add_argument("--memory-recall", action="store_true", help="Prompt for read-only cognitive recall query")
@@ -118,6 +122,72 @@ def main() -> int:
                 return 2
             print(json.dumps(data, ensure_ascii=False, indent=2))
             return 0
+
+        if args.memory_test_list:
+            from jarvis.memory.journal import MemoryOperationJournal
+
+            journal = MemoryOperationJournal(database_path())
+            print(json.dumps({"status": "OK", "items": journal.list_test_items()},
+                             ensure_ascii=False, indent=2))
+            return 0
+
+        if args.memory_test_create or args.memory_test_supersede or args.memory_test_forget:
+            from jarvis.memory.cognitive import CognitiveMemoryClient
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.memory.test_lifecycle import (
+                TEST_A, TEST_B, TEST_SCOPE, TestMemoryLab,
+            )
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            client = CognitiveMemoryClient(url, key)
+            check = client.diagnose()
+            if check["status"] != "COMPATIBLE":
+                print(json.dumps({"status": check["status"]}))
+                return 2
+            lab = TestMemoryLab(client, MemoryOperationJournal(database_path()), url)
+
+            if args.memory_test_create:
+                print(f"Teste descartável | Sofias Memory | Escopo: {TEST_SCOPE}")
+                print("Conteúdo:", TEST_A)
+                print("Não é uma memória pessoal. Uma gravação será persistida no Sofias Memory.")
+                if input("Digite CRIAR TESTE para autorizar: ").strip() != "CRIAR TESTE":
+                    print(json.dumps({"status": "CANCELLED"}))
+                    return 0
+                result = lab.create()
+            else:
+                target_id = args.memory_test_supersede or args.memory_test_forget
+                action = "supersede" if args.memory_test_supersede else "forget"
+                preview = lab.preview(target_id, action=action)
+                print(json.dumps({"target": preview["memory_id"],
+                                  "scope": preview["scope"],
+                                  "lifecycle": preview["lifecycle"],
+                                  "content": preview["content"]},
+                                 ensure_ascii=False, indent=2))
+                if action == "supersede":
+                    print("Substituição persistente:", TEST_B)
+                    required = f"SUBSTITUIR {preview['memory_id']}"
+                    label = "Para autorizar, digite exatamente SUBSTITUIR seguido do UUID: "
+                else:
+                    print("Esquecimento destrutivo e permanente, sem afetar outros IDs.")
+                    required = f"ESQUECER {preview['memory_id']}"
+                    label = "Para autorizar, digite exatamente ESQUECER seguido do UUID: "
+                if input(label).strip() != required:
+                    print(json.dumps({"status": "CANCELLED"}))
+                    return 0
+                # Verify the current remote item again after confirmation.
+                result = (lab.supersede(preview["memory_id"]) if action == "supersede"
+                          else lab.forget(preview["memory_id"]))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["status"] == "CONFIRMED" else 2
 
         if args.memory_operation:
             from jarvis.memory.journal import MemoryOperationJournal
