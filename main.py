@@ -26,11 +26,15 @@ def main() -> int:
     actions.add_argument("--configure-memory-key", action="store_true", help="Prompt for Sofias Memory key without echo")
     actions.add_argument("--memory-check", action="store_true", help="Verify Sofias Memory connectivity and capabilities")
     actions.add_argument("--memory-get", metavar="UUID", help="Read an existing Cognitive Memory by ID")
+    actions.add_argument("--knowledge-datasets", action="store_true", help="List Sofias Memory datasets (read only)")
+    actions.add_argument("--knowledge-query", action="store_true", help="Prompt for a Knowledge query in chunks mode")
     actions.add_argument("--memory-create", action="store_true", help="Create an explicitly confirmed cognitive memory")
     actions.add_argument("--memory-operation", metavar="UUID", help="Inspect a local cognitive write intent")
     parser.add_argument("--memory-type", choices=["profile", "semantic"], default="profile", help="Explicit cognitive type for --memory-create")
     actions.add_argument("--memory-recall", action="store_true", help="Prompt for read-only cognitive recall query")
     parser.add_argument("--memory-scope", action="append", default=None, help="Explicit Cognitive Memory scope for --memory-recall; repeatable")
+    parser.add_argument("--knowledge-dataset", action="append", default=None,
+                        help="Explicit dataset slug for --knowledge-query; repeatable")
     actions.add_argument("--chat", action="store_true", help="One conversational turn in console")
     actions.add_argument("--desktop", action="store_true", help="Launch local desktop UI")
     parser.add_argument("--conversation-id", help="Existing conversation ID for --chat")
@@ -79,6 +83,41 @@ def main() -> int:
             result = SofiasMemoryConnection(url, key).diagnose()
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "COMPATIBLE" else 2
+
+        if args.knowledge_datasets or args.knowledge_query:
+            from jarvis.memory.knowledge import KnowledgeClient, KnowledgeError
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            if args.knowledge_query and not args.knowledge_dataset:
+                print(json.dumps({"status": "DATASET_REQUIRED"}))
+                return 2
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            client = KnowledgeClient(url, key)
+            compatibility = client.diagnose()
+            if compatibility["status"] != "COMPATIBLE":
+                print(json.dumps({"status": compatibility["status"]}))
+                return 2
+            try:
+                if args.knowledge_datasets:
+                    data = {"status": "OK", **client.list_datasets()}
+                else:
+                    query = input("Consulta documental: ").strip()
+                    data = client.query_chunks(
+                        query=query, datasets=args.knowledge_dataset,
+                    )
+            except KnowledgeError as exc:
+                print(json.dumps({"status": str(exc)}))
+                return 2
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            return 0
 
         if args.memory_operation:
             from jarvis.memory.journal import MemoryOperationJournal
