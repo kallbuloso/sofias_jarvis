@@ -1,7 +1,8 @@
 # JARVIS
 
-Local-first, independent AI assistant. **TB-01 implementation is in progress**;
-neither the desktop UI nor all acceptance criteria have been validated on Windows.
+Local-first independent AI assistant. TB-01 is Product Done, merged to main
+after 16 passing tests and owner validation. TB-02 is in progress on its
+own feature branch.
 
 ## TB-01 implemented so far
 
@@ -11,8 +12,7 @@ neither the desktop UI nor all acceptance criteria have been validated on Window
 - native Windows Credential Manager via verified `keyring` backend;
 - candidate desktop: PySide6 WebEngine + Vue 3 + Vuetify 3 with a restricted Qt WebChannel bridge.
 
-The source tree contains a preliminary desktop proof of concept. It has **not**
-yet received human Windows UI validation. The Core is independent of Qt.
+The desktop was validated by the owner on Windows 11. The Core is independent of Qt.
 
 ## Development on Windows 11
 
@@ -72,3 +72,15 @@ use the same local operational store under
   after compatibility validation, not silently assumed complete.
 
 See `docs/product-manager/08-JARVIS-Technical-Backlog.md` for acceptance tests.
+
+## TB-02 step 01 — connection (under validation)
+
+Configure a non-secret Sofias Memory URL in the local data directory and
+a separate API key in Windows Credential Manager. The diagnostic checks
+health and authenticated capability negotiation only, without memory writes.
+
+    .\.venv\Scripts\python.exe main.py --configure-memory-url "https://pefil-sofias-memory.q8cqqr.easypanel.host"
+    .\.venv\Scripts\python.exe main.py --configure-memory-key
+    .\.venv\Scripts\python.exe main.py --memory-check
+
+Expected status: COMPATIBLE. Never provide the API key in chat or command arguments.
