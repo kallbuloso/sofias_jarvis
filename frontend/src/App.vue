@@ -14,6 +14,14 @@ const memoryConfigured = ref(false)
 const useMemory = ref(false)
 const memoryScope = ref('')
 const memoryNotice = ref('')
+const useKnowledge = ref(false)
+const knowledgeDataset = ref('')
+const knowledgeNotice = ref('')
+const knowledgeReferences = ref([])
+const knowledgeQueryId = ref('')
+const knowledgeItems = [
+  { title: 'JARVIS Knowledge', value: 'jarvis-knowledge' },
+]
 const scopeItems = [
   { title: 'Global', value: 'global' },
   { title: 'Projeto JARVIS', value: 'project:jarvis' },
@@ -37,6 +45,15 @@ function inlineParts(value) {
   }
   return parts
 }
+
+watch([useKnowledge, knowledgeDataset], () => {
+  knowledgeNotice.value = ''
+  knowledgeReferences.value = []
+  knowledgeQueryId.value = ''
+  if (knowledgeDataset.value && warning.value === 'Selecione um dataset antes de consultar Knowledge.') {
+    warning.value = ''
+  }
+})
 
 watch([useMemory, memoryScope], () => {
   // Retrieval evidence belongs to the last completed request and scope.
@@ -63,12 +80,17 @@ async function refreshConversations() {
   if (result.ok) conversations.value = result.items
 }
 
-async function openConversation(id, preserveMemoryNotice = false) {
+async function openConversation(id, preserveNotices = false) {
   selected.value = id
   const result = await call('listMessages', id)
   if (selected.value === id && result.ok) {
     messages.value = result.items
-    if (!preserveMemoryNotice) memoryNotice.value = ''
+    if (!preserveNotices) {
+      memoryNotice.value = ''
+      knowledgeNotice.value = ''
+      knowledgeReferences.value = []
+      knowledgeQueryId.value = ''
+    }
     await scrollToBottom()
   }
 }
@@ -93,6 +115,19 @@ async function scrollToBottom() {
 function handleStream(raw) {
   let event
   try { event = JSON.parse(raw) } catch { return }
+  if (event.type === 'knowledge') {
+    if (event.conversationId !== selected.value) return
+    const descriptions = {
+      RESULTS_FOUND: 'Knowledge: documento recuperado com referência verificada.',
+      NO_RESULTS: 'Knowledge: consulta concluída sem trechos correspondentes.',
+      UNAVAILABLE: 'Knowledge indisponível; nenhuma fonte foi confirmada.',
+      NOT_ATTEMPTED: 'A consulta documental não foi executada.',
+    }
+    knowledgeNotice.value = descriptions[event.knowledgeStatus] || ''
+    knowledgeReferences.value = Array.isArray(event.references) ? event.references : []
+    knowledgeQueryId.value = typeof event.queryId === 'string' ? event.queryId : ''
+    return
+  }
   if (event.type === 'done') {
     busy.value = false
     if (event.conversationId === selected.value) {
@@ -132,8 +167,15 @@ async function sendMessage() {
     warning.value = 'Selecione um escopo antes de consultar o Sofias Memory.'
     return
   }
+  if (useKnowledge.value && knowledgeDataset.value !== 'jarvis-knowledge') {
+    warning.value = 'Selecione um dataset antes de consultar Knowledge.'
+    return
+  }
   warning.value = ''
   memoryNotice.value = ''
+  knowledgeNotice.value = ''
+  knowledgeReferences.value = []
+  knowledgeQueryId.value = ''
   busy.value = true
   draft.value = ''
   const conversationId = selected.value
@@ -141,9 +183,12 @@ async function sendMessage() {
   messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
   scrollToBottom()
   try {
-    const result = useMemory.value
-      ? await call('sendMessageWithMemory', conversationId, text, model.value.trim(), memoryScope.value)
-      : await call('sendMessage', conversationId, text, model.value.trim())
+    const result = useKnowledge.value
+      ? await call('sendMessageWithContext', conversationId, text, model.value.trim(),
+          useMemory.value ? memoryScope.value : '', knowledgeDataset.value)
+      : useMemory.value
+        ? await call('sendMessageWithMemory', conversationId, text, model.value.trim(), memoryScope.value)
+        : await call('sendMessage', conversationId, text, model.value.trim())
     if (!result.ok) {
       busy.value = false
       draft.value = text
@@ -249,6 +294,35 @@ onMounted(async () => {
             <div v-if="useMemory && memoryNotice" class="memory-feedback"
               role="status" aria-live="polite">{{ memoryNotice }}</div>
           </div>
+          <div class="knowledge-bar">
+            <v-switch v-model="useKnowledge" color="primary" density="compact"
+              hide-details label="Consultar Knowledge"
+              :disabled="!memoryConfigured || busy"/>
+            <v-select v-if="useKnowledge" v-model="knowledgeDataset" :items="knowledgeItems"
+              label="Dataset documental" variant="outlined" density="compact"
+              hide-details clearable :disabled="busy" class="memory-scope"/>
+            <span v-if="useKnowledge" class="memory-caption">
+              A pergunta consultará documentos do dataset selecionado; as evidências serão enviadas ao modelo.
+            </span>
+            <span v-else class="memory-caption">
+              Desligado: não consulta documentos do Sofias Memory.
+            </span>
+            <div v-if="useKnowledge && knowledgeNotice" class="memory-feedback"
+              role="status" aria-live="polite">{{ knowledgeNotice }}</div>
+            <details v-if="useKnowledge && knowledgeReferences.length"
+              class="knowledge-sources">
+              <summary>Fontes documentais verificadas ({{ knowledgeReferences.length }})</summary>
+              <div v-if="knowledgeQueryId" class="source-meta">Consulta: {{ knowledgeQueryId }}</div>
+              <div v-for="(source, index) in knowledgeReferences" :key="source.chunk_id || index"
+                class="knowledge-source">
+                <div class="source-title">{{ source.source_name }}</div>
+                <div class="source-meta">Documento: {{ source.document_id }}</div>
+                <div class="source-meta">Fonte: {{ source.source_id }}</div>
+                <div class="source-meta">Trecho: {{ source.chunk_id }}</div>
+                <div v-if="source.quote" class="source-quote">{{ source.quote }}</div>
+              </div>
+            </details>
+          </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
               variant="outlined" density="comfortable" hide-details
@@ -295,6 +369,16 @@ html, body, #app { height: 100%; margin: 0; }
   border-left: 2px solid #008080; padding: 4px 10px; background: rgba(0,128,128,.06);
   overflow-wrap: anywhere; }
 .memory-scope { max-width: 240px; min-width: 180px; }
+.knowledge-bar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center;
+  gap: 10px 14px; padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
+.knowledge-sources { flex: 0 0 100%; color: #a3d9d4; font-size: 12px;
+  border-left: 2px solid #008080; padding: 6px 10px;
+  background: rgba(0,128,128,.06); max-height: 160px; overflow-y: auto; overflow-wrap: anywhere; }
+.knowledge-sources summary { cursor: pointer; font-weight: 600; }
+.knowledge-source { padding: 7px 0 4px; border-top: 1px solid #29444a; }
+.source-title { color: #b7e6e2; font-weight: 600; }
+.source-meta { color: #829fa4; font-size: 11px; }
+.source-quote { white-space: pre-wrap; max-height: 70px; overflow: auto; }
 .memory-caption { color: #82969e; font-size: 12px; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
