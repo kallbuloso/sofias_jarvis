@@ -108,3 +108,32 @@ Mutating methods are **not yet wired to the chat UI/CLI**. Before using those
 against a live service, the JARVIS Core must persist authorization, operation
 identity and outcome evidence to reconcile uncertain results correctly.
 No conversational automatic cognitive writes are enabled.
+
+
+### Explicit memory write smoke (requires your local confirmation)
+
+Once the automated tests pass, you can deliberately save **one
+non-sensitive test preference** to the live service. This is an intentional
+persistent write, not just a diagnostic read:
+
+    .\.venv\Scripts\python.exe main.py --memory-create --memory-scope global --memory-type profile
+
+At \`Informação para lembrar:\`, enter a harmless preference, e.g.
+\`Para interfaces gráficas, prefiro a cor teal.\`. Check scope and type, then
+type **GRAVAR** to consent. Any other response cancels. Success returns
+\`CONFIRMED\` and a \`memory_id\`. This write is durable in Sofias Memory.
+
+Then verify:
+
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope global
+    .\.venv\Scripts\python.exe main.py --memory-get UUID_FROM_CONFIRMED_RESULT
+
+An operation can be inspected locally without sending it again:
+
+    .\.venv\Scripts\python.exe main.py --memory-operation OPERATION_UUID
+
+If a write yields \`RESULT_UNKNOWN\`, do **not** repeat it with a fresh key.
+The original attempt is journaled locally for deliberate reconciliation.
+Confirmed and rejected operations have their original content removed from
+the local journal. This version has no automatic retry/reconciliation.
+A conservative credential-content filter blocks common secret markers.

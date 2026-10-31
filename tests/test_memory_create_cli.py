@@ -97,3 +97,14 @@ def test_scope_must_be_explicit_and_exact(monkeypatch, tmp_path, capsys):
         assert cli.main() == 2
         assert calls == []
         capsys.readouterr()
+
+
+
+def test_cli_rejects_secret_like_memory_content(monkeypatch, tmp_path, capsys):
+    calls = configure(monkeypatch, tmp_path)
+    cli = load_main()
+    monkeypatch.setattr("builtins.input", lambda _: "Minha senha: ultra-secreta")
+    monkeypatch.setattr(sys, "argv", ["main.py", "--memory-create", "--memory-scope", "global"])
+    assert cli.main() == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "SENSITIVE_CONTENT_REJECTED"
+    assert calls == []

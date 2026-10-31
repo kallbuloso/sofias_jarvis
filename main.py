@@ -120,6 +120,11 @@ def main() -> int:
             if not 1 <= len(content) <= 16384:
                 print(json.dumps({"status": "INVALID_CONTENT"}))
                 return 2
+            from jarvis.memory.sensitive import looks_like_credential
+
+            if looks_like_credential(content):
+                print(json.dumps({"status": "SENSITIVE_CONTENT_REJECTED"}))
+                return 2
             print(f"Destino: Sofias Memory | Escopo: {scope} | Tipo: {args.memory_type}")
             print("Esta confirmação gravará uma memória cognitiva persistente.")
             if input("Digite GRAVAR para autorizar: ").strip() != "GRAVAR":

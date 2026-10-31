@@ -38,3 +38,24 @@ A service error or incompatible response must not be shown as NO_RESULTS.
 
 Next: Core authorization/journal for mutating operations; context injection,
 knowledge dataset retrieval with references, minimal UI and live validation.
+
+
+## Explicit Create CLI (new controlled validation)
+
+The user may call \`--memory-create --memory-scope global --memory-type profile\`.
+The local terminal prompts for content and explicit \`GRAVAR\` confirmation.
+Only then does the Core record the Create intent in the existing SQLite
+operational database, assign a stable UUID idempotency key, and dispatch.
+
+The journal records \`prepared\` → \`in_flight\` → one of
+\`confirmed\`, \`rejected\` or \`unknown\`. A restart never blindly retries
+\`in_flight\` or \`unknown\`. On a terminal confirmed/rejected outcome the
+journal removes the request payload; on unknown it retains the original for
+future explicit reconciliation. The public status command never displays
+the payload. Sensitive-looking credential text is blocked by a conservative
+preliminary filter; this is not a replacement for privacy policy.
+
+\`--memory-operation OPERATION_UUID\` is a local read-only status check.
+
+**Real Create/Recall/Get against the VPS remain unvalidated until the owner
+explicitly types GRAVAR and reports the result.** Do not send credentials.
