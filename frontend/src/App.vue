@@ -10,6 +10,14 @@ const draft = ref('')
 const busy = ref(false)
 const warning = ref('')
 const credentialConfigured = ref(false)
+const memoryConfigured = ref(false)
+const useMemory = ref(false)
+const memoryScope = ref('')
+const memoryNotice = ref('')
+const scopeItems = [
+  { title: 'Global', value: 'global' },
+  { title: 'Projeto JARVIS', value: 'project:jarvis' },
+]
 const historyEnd = ref(null)
 let bridge = null
 
@@ -32,6 +40,7 @@ async function openConversation(id) {
   const result = await call('listMessages', id)
   if (selected.value === id && result.ok) {
     messages.value = result.items
+    memoryNotice.value = ''
     await scrollToBottom()
   }
 }
@@ -58,6 +67,15 @@ function handleStream(raw) {
   try { event = JSON.parse(raw) } catch { return }
   if (event.type === 'done') {
     busy.value = false
+    if (event.conversationId === selected.value) {
+      const statuses = {
+        RESULTS_FOUND: 'Sofias Memory: memórias recuperadas para esta resposta.',
+        NO_RESULTS: 'Sofias Memory: consulta concluída, sem memórias correspondentes.',
+        UNAVAILABLE: 'Sofias Memory indisponível; nenhuma recuperação foi confirmada.',
+        NOT_ATTEMPTED: 'A consulta de memória não foi executada.',
+      }
+      memoryNotice.value = statuses[event.memoryStatus] || ''
+    }
     if (event.status !== 'completed') {
       warning.value = event.status === 'interrupted'
         ? 'Resposta interrompida.'
@@ -82,7 +100,12 @@ function handleStream(raw) {
 async function sendMessage() {
   const text = draft.value.trim()
   if (!ready.value || busy.value || !selected.value || !model.value.trim() || !text) return
+  if (useMemory.value && !memoryScope.value) {
+    warning.value = 'Selecione um escopo antes de consultar o Sofias Memory.'
+    return
+  }
   warning.value = ''
+  memoryNotice.value = ''
   busy.value = true
   draft.value = ''
   const conversationId = selected.value
@@ -90,7 +113,9 @@ async function sendMessage() {
   messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
   scrollToBottom()
   try {
-    const result = await call('sendMessage', conversationId, text, model.value.trim())
+    const result = useMemory.value
+      ? await call('sendMessageWithMemory', conversationId, text, model.value.trim(), memoryScope.value)
+      : await call('sendMessage', conversationId, text, model.value.trim())
     if (!result.ok) {
       busy.value = false
       draft.value = text
@@ -119,6 +144,7 @@ onMounted(async () => {
     conversations.value = initial.conversations
     model.value = initial.model
     credentialConfigured.value = initial.credentialConfigured
+    memoryConfigured.value = initial.memoryConfigured === true
     ready.value = true
     if (conversations.value.length) await openConversation(conversations.value[0].id)
     else await createConversation()
@@ -133,7 +159,7 @@ onMounted(async () => {
     <v-layout>
       <v-navigation-drawer permanent width="285" color="surface">
         <div class="sidebar-heading">
-          <div class="brand">JARVIS <span>TB-01</span></div>
+          <div class="brand">JARVIS <span>TB-02</span></div>
           <v-btn block color="primary" variant="flat" :disabled="!ready" @click="createConversation">
             Nova conversa
           </v-btn>
@@ -160,6 +186,8 @@ onMounted(async () => {
             class="mx-6 mt-4">Configure sua chave pelo console: main.py --configure-openai-key</v-alert>
           <v-alert v-if="warning" color="warning" variant="tonal" density="compact"
             class="mx-6 mt-4">{{ warning }}</v-alert>
+          <v-alert v-if="memoryNotice" color="info" variant="tonal" density="compact"
+            class="mx-6 mt-3">{{ memoryNotice }}</v-alert>
           <div class="history">
             <div v-if="!messages.length" class="empty">Conversa pronta. Envie sua primeira mensagem.</div>
             <div v-for="(m, i) in messages" :key="m.id || i"
@@ -169,6 +197,20 @@ onMounted(async () => {
               <div v-if="m.status !== 'completed'" class="status">{{ m.status }}</div>
             </div>
             <div ref="historyEnd"></div>
+          </div>
+          <div class="memory-bar">
+            <v-switch v-model="useMemory" color="primary" density="compact"
+              hide-details label="Consultar Sofias Memory"
+              :disabled="!memoryConfigured || busy"/>
+            <v-select v-if="useMemory" v-model="memoryScope" :items="scopeItems"
+              label="Escopo da memória" variant="outlined" density="compact"
+              hide-details clearable :disabled="busy" class="memory-scope"/>
+            <span class="memory-caption" v-else-if="!memoryConfigured">
+              Configure a URL e chave do Sofias Memory pelo console.
+            </span>
+            <span class="memory-caption" v-else>
+              Desligado: esta conversa não consulta a memória.
+            </span>
           </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
@@ -205,6 +247,10 @@ html, body, #app { height: 100%; margin: 0; }
 .speaker { font-size: 11px; letter-spacing: 0.4px; color: #85d1c9; margin-bottom: 7px; }
 .content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .status { font-size: 11px; color: #c69d6b; margin-top: 6px; }
+.memory-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+  padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
+.memory-scope { max-width: 240px; min-width: 180px; }
+.memory-caption { color: #82969e; font-size: 12px; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
