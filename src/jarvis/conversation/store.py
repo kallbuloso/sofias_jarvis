@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -74,6 +74,23 @@ class SQLiteConversationStore:
                     PRAGMA user_version = 1;
                     COMMIT;
                 """)
+                version = 1
+            if version == 1:
+                db.execute("""
+                    CREATE TABLE cognitive_write_operations (
+                        id TEXT PRIMARY KEY,
+                        service_url TEXT NOT NULL,
+                        payload_json TEXT,
+                        status TEXT NOT NULL CHECK (
+                            status IN ('prepared','in_flight','confirmed','unknown','rejected')
+                        ),
+                        memory_id TEXT,
+                        error_code TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("PRAGMA user_version = 2")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
