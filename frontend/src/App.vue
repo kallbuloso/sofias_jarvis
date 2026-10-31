@@ -35,12 +35,12 @@ async function refreshConversations() {
   if (result.ok) conversations.value = result.items
 }
 
-async function openConversation(id) {
+async function openConversation(id, preserveMemoryNotice = false) {
   selected.value = id
   const result = await call('listMessages', id)
   if (selected.value === id && result.ok) {
     messages.value = result.items
-    memoryNotice.value = ''
+    if (!preserveMemoryNotice) memoryNotice.value = ''
     await scrollToBottom()
   }
 }
@@ -83,7 +83,7 @@ function handleStream(raw) {
     }
     refreshConversations().catch(() => {})
     if (event.conversationId === selected.value) {
-      openConversation(selected.value).catch(() => {})
+      openConversation(selected.value, true).catch(() => {})
     }
     return
   }
@@ -205,6 +205,9 @@ onMounted(async () => {
             <v-select v-if="useMemory" v-model="memoryScope" :items="scopeItems"
               label="Escopo da memória" variant="outlined" density="compact"
               hide-details clearable :disabled="busy" class="memory-scope"/>
+            <span v-if="useMemory" class="memory-caption">
+              A pergunta será consultada no Sofias Memory; evidências selecionadas serão enviadas ao modelo.
+            </span>
             <span class="memory-caption" v-else-if="!memoryConfigured">
               Configure a URL e chave do Sofias Memory pelo console.
             </span>
