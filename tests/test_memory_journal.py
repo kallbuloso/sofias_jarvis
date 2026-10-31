@@ -93,7 +93,7 @@ def test_existing_v1_database_is_migrated_without_losing_messages(tmp_path):
     new = SQLiteConversationStore(path)
     assert new.list_messages(conv)[0]["content"] == "Histórico antigo"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("SELECT name FROM sqlite_master WHERE name='cognitive_write_operations'").fetchone()
 
 
@@ -108,3 +108,23 @@ def test_journal_rejects_key_mismatch_and_bad_transition(tmp_path):
     journal.prepare(op_id, "https://memory.example", payload)
     with pytest.raises(ValueError, match="operation_not_in_flight"):
         journal.resolve(op_id, status="confirmed", memory_id=str(uuid4()))
+
+
+
+def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
+    path = tmp_path / "jarvis.sqlite3"
+    SQLiteConversationStore(path)
+    op_id, payload = new_intent()
+    journal = MemoryOperationJournal(path)
+    journal.prepare(op_id, "https://memory.example", payload)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP INDEX idx_tb02_mutation_pending")
+        db.execute("DROP TABLE tb02_test_memories")
+        db.execute("ALTER TABLE cognitive_write_operations DROP COLUMN operation_kind")
+        db.execute("ALTER TABLE cognitive_write_operations DROP COLUMN target_memory_id")
+        db.execute("PRAGMA user_version = 2")
+    reopened = MemoryOperationJournal(path)
+    assert reopened.get(op_id)["status"] == "prepared"
+    assert reopened.claim(op_id)["payload"] == payload
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
