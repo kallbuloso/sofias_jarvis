@@ -85,20 +85,22 @@ async function sendMessage() {
   warning.value = ''
   busy.value = true
   draft.value = ''
+  const conversationId = selected.value
+  messages.value.push({ role: 'user', content: text, status: 'completed' })
+  messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
+  scrollToBottom()
   try {
-    const result = await call('sendMessage', selected.value, text, model.value.trim())
+    const result = await call('sendMessage', conversationId, text, model.value.trim())
     if (!result.ok) {
       busy.value = false
       draft.value = text
       warning.value = 'Envio recusado: ' + result.error
-      return
+      if (selected.value === conversationId) await openConversation(conversationId)
     }
-    messages.value.push({ role: 'user', content: text, status: 'completed' })
-    messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
-    scrollToBottom()
   } catch {
     busy.value = false
     warning.value = 'Falha de comunicação com o Core.'
+    if (selected.value === conversationId) await openConversation(conversationId)
   }
 }
 

@@ -23,6 +23,7 @@ def main() -> int:
     actions.add_argument("--list-conversations", action="store_true", help="List local conversations")
     actions.add_argument("--configure-openai-key", action="store_true", help="Prompt for key without echo")
     actions.add_argument("--chat", action="store_true", help="One conversational turn in console")
+    actions.add_argument("--desktop", action="store_true", help="Launch local desktop UI")
     parser.add_argument("--conversation-id", help="Existing conversation ID for --chat")
     parser.add_argument("--model", help="OpenAI model; or configure JARVIS_MODEL")
     args = parser.parse_args()
@@ -35,6 +36,11 @@ def main() -> int:
             WindowsCredentialStore().set_openai_key(secret)
             print("Key securely stored in Windows Credential Manager")
             return 0
+
+        if args.desktop:
+            from jarvis.desktop.app import launch_desktop
+
+            return launch_desktop()
 
         store = SQLiteConversationStore(database_path())
         recovered = store.interrupt_inflight_messages()

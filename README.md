@@ -1,55 +1,74 @@
 # JARVIS
 
-Independent, local-first desktop assistant. **TB-01 is in progress**, not Product Done.
+Local-first, independent AI assistant. **TB-01 implementation is in progress**;
+neither the desktop UI nor all acceptance criteria have been validated on Windows.
 
-## Current implementation
+## TB-01 implemented so far
 
-The first commits contain a Python bootstrap, SQLite conversation store,
-OpenAI Responses streaming adapter, a conversation runtime, and a fail-closed
-Windows Credential Manager adapter. The provider and secret adapters have
-automated mock-based tests, **not** a live OpenAI or Windows 11 verification.
+- Python Core and independent application bootstrap;
+- SQLite conversation history and conservative incomplete-message handling;
+- OpenAI Responses API streaming adapter, with a real console smoke confirmed;
+- native Windows Credential Manager via verified `keyring` backend;
+- candidate desktop: PySide6 WebEngine + Vue 3 + Vuetify 3 with a restricted Qt WebChannel bridge.
 
-There is **no desktop UI yet**. A temporary console chat is available for
-validating the real API on Windows. See
-`docs/product-manager/08-JARVIS-Technical-Backlog.md` for approved criteria.
+The source tree contains a preliminary desktop proof of concept. It has **not**
+yet received human Windows UI validation. The Core is independent of Qt.
 
-Python 3.13 or 3.14 is required for the candidate runtime.
+## Development on Windows 11
 
-```powershell
-py -3.13 main.py --diagnose
-py -3.13 main.py --create-conversation "Teste"
-py -3.13 main.py --list-conversations
-```
-
-For local development/tests:
+Requires Python 3.13 and recent Node.js/npm (Node.js is only a frontend build
+tool, **not** the Core runtime).
 
 ```powershell
 py -3.13 -m venv .venv
-.venv\\Scripts\\python.exe -m pip install -e ".[dev]"
-.venv\\Scripts\\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,ui]"
+.\.venv\Scripts\python.exe -m pytest -q
+
+cd frontend
+npm install
+npm run build
+cd ..
+
+$env:JARVIS_MODEL = "gpt-6-luna"
+.\.venv\Scripts\python.exe main.py --desktop
 ```
 
-By default data lives in `%LOCALAPPDATA%\\JARVIS\\jarvis.sqlite3` on Windows.
-For isolated development, set `JARVIS_DATA_DIR` to another directory. Never
-commit runtime databases or API keys.
+The default model is intentionally **not** hard-coded. Use any supported
+model enabled for your own API account. You can change the model in the desktop.
 
-## Console integration smoke (Windows only)
-
-Run these commands with your own API key **on your computer**, never send it
-through ChatGPT or commit it to the repository:
+If you have not configured an OpenAI key on this Windows account:
 
 ```powershell
-.venv\\Scripts\\python.exe main.py --configure-openai-key
-.venv\\Scripts\\python.exe main.py --chat --model YOUR_AVAILABLE_MODEL
+.\.venv\Scripts\python.exe main.py --configure-openai-key
 ```
 
-The key is prompted without echo and saved through the verified native
-Windows Credential Manager backend. Each chat command processes one turn; use
-`--conversation-id UUID` to continue the same conversation. OpenAI API usage
-may incur separate charges. This is a development tool, not the desktop UI.
+This prompts for the API key without echoing it and stores it through Windows
+Credential Manager. Never commit secrets or send them through chat.
 
-## Next within TB-01
+## Console commands
 
-Validate the real API and Windows backend; implement the minimal
-PySide6 + Vue/Vuetify desktop; verify streaming, restart, and shutdown
-on Windows 11.
+```powershell
+.\.venv\Scripts\python.exe main.py --diagnose
+.\.venv\Scripts\python.exe main.py --list-conversations
+.\.venv\Scripts\python.exe main.py --chat --model gpt-6-luna
+```
+
+Use `--conversation-id UUID` to continue a console conversation. All modes
+use the same local operational store under
+`%LOCALAPPDATA%\JARVIS\jarvis.sqlite3`. For isolated development, set
+`JARVIS_DATA_DIR` before startup.
+
+## Current constraints and next checks
+
+- TB-01 requires Windows UI tests for Qt WebChannel, incremental rendering,
+  conversation switching, restart, shutdown, and loss of API connectivity.
+- The first user confirmation of a live OpenAI response does not demonstrate
+  the UI stream or the full TB-01 acceptance criteria.
+- The Vue desktop intentionally cannot open arbitrary internet pages or call
+  provider APIs; all access runs through the Python Core.
+- Voice, Sofias Memory, tools, fallback, background execution, and final
+  installer are outside TB-01 scope.
+- Frontend dependency lock and Python dependency pinning will be finalized
+  after compatibility validation, not silently assumed complete.
+
+See `docs/product-manager/08-JARVIS-Technical-Backlog.md` for acceptance tests.
