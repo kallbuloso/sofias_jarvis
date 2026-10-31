@@ -59,3 +59,33 @@ preliminary filter; this is not a replacement for privacy policy.
 
 **Real Create/Recall/Get against the VPS remain unvalidated until the owner
 explicitly types GRAVAR and reports the result.** Do not send credentials.
+
+
+## Real integration evidence (reported by owner, 2026-10-31)
+
+- Windows test suite passed **55 tests** before the later journal/context changes.
+- Explicit \`--memory-create --memory-scope global --memory-type profile\`
+  returned \`CONFIRMED\`, with a durable memory ID and operation ID.
+- A subsequent \`--memory-recall --memory-scope global\` returned
+  \`RESULTS_FOUND\`: the same ID, \`lifecycle=active\`,
+  \`origin_kind=user_asserted\`, \`source_system=jarvis\`,
+  \`is_current_truth=true\`, and cosine relevance around 0.774.
+- This establishes real Create→Recall and provenance, but **does not
+  establish Get, Supersede, Forget or conversation context**.
+- The more recent automated tests have not yet been reported by the owner.
+
+## Step 03 in progress — opt-in context
+
+\`MemoryAwareTextProvider\` wraps the text provider without changing
+the conversation store or the normal provider adapter. The explicit
+\`--chat --use-memory --memory-scope global\` path makes exactly one
+Cognitive Memory read-only recall and introduces bounded, low-trust
+JSON evidence into the current provider request, without persisting that
+evidence as a chat message. The static developer instruction establishes
+a boundary; content from Memory always has lower authority.
+
+No memory content is used for authorization; no automatic Cognitive
+Memory writes. A Memory outage remains distinct from an empty result,
+and independent text chat is allowed to continue with an explicit
+unavailable signal. GUI integration and live context validation remain
+pending.

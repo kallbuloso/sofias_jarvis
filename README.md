@@ -137,3 +137,32 @@ The original attempt is journaled locally for deliberate reconciliation.
 Confirmed and rejected operations have their original content removed from
 the local journal. This version has no automatic retry/reconciliation.
 A conservative credential-content filter blocks common secret markers.
+
+
+## TB-02 step 03 — memory-assisted console chat (opt-in)
+
+A live Cognitive Memory Create and Recall have been verified by the owner.
+**A memory-assisted OpenAI answer is not yet validated**; the next smoke
+uses the explicit \`--use-memory\` switch:
+
+    .\.venv\Scripts\python.exe main.py --chat --model gpt-6-luna --use-memory --memory-scope global
+
+When prompted, ask: \`Qual minha cor preferida para interfaces gráficas?\`.
+A successful response should use the retrieved teal preference and report
+\`"memory_retrieval": "RESULTS_FOUND"\` with the memory ID. This runs one
+read-only cognitive recall before normal inference and transmits the prompt
+to the configured Sofias Memory instance. The prompt is sent there only
+because \`--use-memory\` was explicitly selected.
+
+Without the opt-in flag, \`--chat\` remains unchanged. With missing or
+unavailable Memory, the OpenAI text turn can still proceed, while the model
+receives an explicit \`UNAVAILABLE\` retrieval status and must not claim
+to have recovered a memory. If Memory returns no matches, status is
+\`NO_RESULTS\` (not an outage). Memory data and references are ephemeral
+context, not persistent SQLite conversation messages or privileged
+instructions. The JARVIS UI is **not yet** memory-aware; this smoke is
+console-only.
+
+Scope is mandatory and exact; use multiple \`--memory-scope\` options
+only when intentionally querying more than one scope. Writes remain
+disabled by default during conversation.
