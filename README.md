@@ -216,3 +216,20 @@ used by ordinary chat.
 Do not execute the mutation commands before the new full pytest suite
 passes. See \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`
 for exact permissions, expected tombstone evidence, and safe-stop rules.
+
+
+## TB-02 — Ingestão controlada do ADR-0001 para Knowledge Retrieval
+
+O fluxo de ingestão é restrito ao ADR-0001 aprovado. Não envia o repositório
+inteiro e não faz retry automático. Criação do dataset e ingestão precisam
+de confirmações distintas. A API key permanece no Windows Credential Manager.
+
+    .\.venv\Scripts\python.exe main.py --knowledge-create-dataset
+    .\.venv\Scripts\python.exe main.py --knowledge-datasets
+    .\.venv\Scripts\python.exe main.py --knowledge-ingest-adr
+    .\.venv\Scripts\python.exe main.py --knowledge-run RUN_ID
+    .\.venv\Scripts\python.exe main.py --knowledge-stats
+    .\.venv\Scripts\python.exe main.py --knowledge-query --knowledge-dataset jarvis-knowledge
+
+Consulte `docs/implementation/TB-02-ADR-Knowledge-Validation.md` para o
+roteiro completo, confirmação, custeio e critérios de proveniência.

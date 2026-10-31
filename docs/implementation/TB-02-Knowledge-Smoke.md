@@ -67,3 +67,8 @@ If an error is returned, capture the safe status; do not share API keys.
 ## Observação real de datasets — 2026-10-31
 
 O proprietário executou `--knowledge-datasets` com sucesso e recebeu `total: 4`, todos os registros `production-smoke-*` com `status: deleted`. Isso comprova leitura do catálogo, **não** recuperação documental com proveniência: nenhum dataset ativo foi encontrado na listagem. Não criar dados fictícios sem autorização e não confundir esses datasets com memórias cognitivas pessoais.
+
+
+## Teste aprovado com ADR-0001 (implementação pendente de validação real)
+
+O proprietário autorizou a criação do dataset `jarvis-knowledge` e a ingestão de **um ADR não sensível do JARVIS**. Foi escolhido o ADR-0001 aprovado, extraído literalmente de `docs/product-manager/07-JARVIS-ADRs.md`. Adicionados comandos supervisionados para criar o dataset (201), enviar `mode=full` com resposta assíncrona (202), acompanhar o Run, consultar estatísticas e recuperar chunks. Nenhuma alteração foi enviada à VPS por esses commits. Roteiro: `docs/implementation/TB-02-ADR-Knowledge-Validation.md`.

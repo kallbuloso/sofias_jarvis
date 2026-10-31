@@ -220,3 +220,8 @@ a aprovação do roadmap e sem autorizar merge ou TB-03.
 real, não sensível, e um dataset ativo no Sofias Memory (ou aprovar
 expressamente sua criação/ingestão), então validar a cadeia documental
 de trechos e proveniência sem introduzir memória cognitiva artificial.
+
+
+## 7. TB-02 — autorização documental e incremento ADR-0001
+
+Proprietário autorizou explicitamente criar um dataset no Sofias Memory e ingerir um ADR não sensível do repositório para completar a validação de Knowledge Retrieval. Dataset fixo `jarvis-knowledge`; somente a seção ADR-0001 do arquivo aprovado `docs/product-manager/07-JARVIS-ADRs.md`; comandos confirmados e sem retry automático. Foram implementados adapter e testes offline para Dataset Create, Remember `mode=full` (Run assíncrono), inspeção de Run, contadores e recuperação com proveniência. **Execução e validação reais na VPS pendentes**. Sem merge na `main`, sem avanço para TB-03. Roteiro: `docs/implementation/TB-02-ADR-Knowledge-Validation.md`.
