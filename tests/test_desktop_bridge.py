@@ -113,7 +113,8 @@ def test_worker_memory_response_is_provenance_bounded(tmp_path, monkeypatch):
         "include_superseded": False,
     }]
     assert len(requests) == 1
-    assert "Prefiro interfaces teal." in requests[0][1]["content"]
+    assert requests[0][0]["role"] == "developer"
+    assert "Prefiro interfaces teal." in requests[0][2]["content"]
     assert store.completed_context(conversation) == [
         {"role": "user", "content": "Qual minha cor?"},
         {"role": "assistant", "content": "A cor é teal."},
@@ -138,7 +139,10 @@ def test_worker_without_memory_never_accesses_memory_vault(tmp_path, monkeypatch
 
     class Responses:
         def create(self, *, model, input, stream):
-            assert input == [{"role": "user", "content": "Oi"}]
+            assert len(input) == 2
+            assert input[0]["role"] == "developer"
+            assert "não invente" in input[0]["content"]
+            assert input[-1] == {"role": "user", "content": "Oi"}
             yield SimpleNamespace(type="response.output_text.delta", delta="Olá")
             yield SimpleNamespace(type="response.completed", delta="")
 
@@ -167,7 +171,7 @@ def test_missing_memory_vault_degrades_without_leaking_key(tmp_path, monkeypatch
 
     class Responses:
         def create(self, *, model, input, stream):
-            assert '"status":"UNAVAILABLE"' in input[1]["content"]
+            assert '"status":"UNAVAILABLE"' in input[2]["content"]
             yield SimpleNamespace(type="response.output_text.delta", delta="Não consegui consultar a memória.")
             yield SimpleNamespace(type="response.completed", delta="")
 
@@ -179,3 +183,41 @@ def test_missing_memory_vault_degrades_without_leaking_key(tmp_path, monkeypatch
     worker.run()
     assert results == [(conversation, "completed", "", "UNAVAILABLE")]
     assert worker.api_key == ""
+
+
+
+def test_attribution_policy_does_not_claim_disabled_memory(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sys
+
+    from jarvis.desktop.bridge import ReplyWorker
+    from jarvis.conversation.store import SQLiteConversationStore
+
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    store = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = store.create_conversation()
+    store.append_user_message(cid, "Olá")
+    previous = store.begin_assistant_message(cid)
+    store.append_assistant_delta(previous, "Sua cor preferida é teal.")
+    store.end_assistant_message(previous, successful=True)
+
+    class Responses:
+        def create(self, *, model, input, stream):
+            assert input[0]["role"] == "developer"
+            assert "Mensagens anteriores" not in input[0]["content"]
+            assert "Mensagens anteriores" not in str(input[1:])
+            assert "Mensagens anteriores" not in input[-1]["content"]
+            assert "do próprio assistente" in input[0]["content"]
+            assert input[-2] == {"role": "assistant", "content": "Sua cor preferida é teal."}
+            assert input[-1] == {"role": "user", "content": "De onde veio essa preferência?"}
+            yield SimpleNamespace(type="response.output_text.delta", delta="Foi mencionado antes, mas não verificado.")
+            yield SimpleNamespace(type="response.completed", delta="")
+
+    monkeypatch.setitem(sys.modules, "openai",
+        SimpleNamespace(OpenAI=lambda **kwargs: SimpleNamespace(responses=Responses())))
+    worker = ReplyWorker(cid, "De onde veio essa preferência?", "model", "OPENAI-SECRET")
+    results = []
+    worker.done.connect(lambda *args: results.append(args))
+    worker.run()
+    assert results == [(cid, "completed", "", "NOT_REQUESTED")]
+    assert all(m["role"] != "developer" for m in store.completed_context(cid))
