@@ -133,3 +133,29 @@ Critérios:
 - TB-02 permanece `IN PROGRESS` até retrieval real, proveniência e
   integração de conhecimento ao desktop serem validados.
 - `main` não é alterada nem há autorização de merge.
+
+
+## Evidência real — Dataset criado e listado (2026-10-31)
+
+O proprietário executou `--knowledge-create-dataset`, digitou a autorização
+literal `CRIAR DATASET jarvis-knowledge` e recebeu:
+
+- `status=CREATED`
+- `dataset_id=21100a21-d6e3-4dcc-a730-fe2f26111b5c`
+- `slug=jarvis-knowledge`
+- `name=JARVIS Knowledge`
+
+A listagem posterior por `--knowledge-datasets` retornou `total=5` e
+confirmou que `jarvis-knowledge` está `active`; os quatro outros
+datasets `production-smoke-*` permanecem `deleted`.
+
+**Critério de criação/listagem: PASS.** Não há ainda prova de
+`Remember`, processamento `mode=full`, chunks ativos, `Recall`
+documental ou referências reais. A criação do dataset não implica
+ingestão. O último relatório do proprietário sobre testes adicionais
+apontou 140 aprovados e duas falhas, que tiveram correções publicadas
+no commit `76cb87f`. A suíte pós-correção não foi reportada ainda.
+
+**Próximo teste autorizado:** validar pytest pós-correção e, somente
+se passar, executar `--knowledge-ingest-adr` com confirmação
+`INGESTIR ADR-0001`; registrar `run_id` sem repetir a operação.
