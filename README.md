@@ -166,3 +166,36 @@ console-only.
 Scope is mandatory and exact; use multiple \`--memory-scope\` options
 only when intentionally querying more than one scope. Writes remain
 disabled by default during conversation.
+
+
+## TB-02 step 05 — Knowledge Retrieval (first read-only adapter)
+
+Knowledge Memory is **not** the same API as Cognitive Memory. The
+new CLI lists existing dataset slugs, then queries a **selected dataset**
+using \`POST /api/v1/recall\` with \`mode=chunks\`, \`only_context=true\`
+and \`include_references=true\`. This avoids a second generated answer
+from Sofias Memory. The service **does record a Query audit ID** for
+each recall; the command does not ingest, edit, forget or delete knowledge.
+
+    .\.venv\Scripts\python.exe main.py --knowledge-datasets
+    .\.venv\Scripts\python.exe main.py --knowledge-query --knowledge-dataset YOUR_DATASET_SLUG
+
+At \`Consulta documental:\`, enter your question. The output preserves
+\`query_id\`, \`source_id\`, \`document_id\`, \`chunk_id\` and any returned
+reference/quote. If the dataset is not already populated, discovery can
+work yet retrieval may return \`NO_RESULTS\`. Choose an existing dataset
+from the first command; do not assume \`main\` is populated.
+
+The Python adapter and its CLI are an **intermediate TB-02 increment**.
+Knowledge integration into desktop response/context and full provenance
+display have **not** been accepted yet.
+
+## Desktop presentation mini-fix
+
+After the owner reported 88 PASS and a successful Vite build, screenshot
+inspection found an oversized generic warning panel (missing scope) and
+raw Markdown \`**teal**\` text. The feature branch now uses bounded,
+non-expanding warning elements and escaped Vue-text rendering of basic
+inline **bold** only. Full CommonMark, rich HTML and arbitrary clickable
+links are intentionally not supported; do not add \`v-html\` for
+untrusted model content. Rebuild the frontend after updating.

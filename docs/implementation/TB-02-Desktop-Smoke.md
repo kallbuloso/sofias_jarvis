@@ -87,3 +87,28 @@ the patches listed below. Screenshots show:
 **Re-run the full Windows test suite, npm build, and desktop visual smoke.**
 Do not mark this visual bug resolved or declare TB-02 Product Done
 before those validations are reported.
+
+
+## Subsequent evidence and presentation correction
+
+The owner reported **88 passed in 3.87s**, plus Vite build SUCCESS
+(557 modules, 5.20s). Vite displayed a non-fatal warning that the
+JavaScript bundle exceeded the recommended 500 kB chunk threshold.
+Screenshots in two new conversations showed: with Memory OFF, JARVIS
+responded that the preference had not been provided in the conversation;
+with Memory ON + Global, JARVIS acknowledged the retrieved teal
+preference. The oversized Memory retrieval notice was resolved.
+
+A third screenshot exposed a still-oversized *generic validation warning*
+when the memory scope was missing. The response UI also displayed
+\`**teal**\` literally, showing the lack of Markdown handling.
+
+Fixes now published on the feature branch:
+- Replace both generic \`v-alert\` panels with non-growing inline alerts.
+- Render simple **bold** syntax with escaped Vue interpolations, not
+  potentially unsafe HTML injection.
+- Revalidate on Windows; screenshots are not yet available after this
+  second visual patch.
+
+The 88-pass result predates the new Knowledge and presentation commits.
+Do not report the revised suite as passing without a new run.
