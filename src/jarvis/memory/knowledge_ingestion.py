@@ -98,7 +98,7 @@ class ADRKnowledgeClient(KnowledgeClient):
     def create_adr_dataset(self) -> dict:
         existing = self._dataset(required=False)
         if existing:
-            return {"status": "ALREADY_EXISTS", **existing}
+            return {**existing, "status": "ALREADY_EXISTS"}
         data = self._request(
             "POST", "/api/v1/datasets",
             body={"name": DATASET_NAME, "description": DATASET_DESCRIPTION,

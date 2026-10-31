@@ -181,7 +181,7 @@ def main() -> int:
                 print(json.dumps({"status": str(exc)}))
                 return 2
             print(json.dumps(result, ensure_ascii=False, indent=2))
-            if result["status"] in ("failed", "cancelled", "FAILED", "CANCELLED"):
+            if result.get("status") in ("failed", "cancelled", "FAILED", "CANCELLED"):
                 return 2
             return 0
 

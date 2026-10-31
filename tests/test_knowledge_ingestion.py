@@ -135,7 +135,10 @@ def test_dataset_create_exact_slug_http_201_and_second_call_is_noop():
     assert service.create_adr_dataset()["status"] == "CREATED"
     assert transport.calls[-1].method == "POST"
     before = len([r for r in transport.calls if r.method == "POST"])
-    assert service.create_adr_dataset()["status"] == "ALREADY_EXISTS"
+    second = service.create_adr_dataset()
+    assert second["status"] == "ALREADY_EXISTS"
+    assert second["dataset_id"] == DATASET_ID
+    assert second["slug"] == DATASET_SLUG
     assert len([r for r in transport.calls if r.method == "POST"]) == before
 
 

@@ -100,7 +100,9 @@ def test_readonly_run_and_stats_never_prompt_for_confirmation(monkeypatch, tmp_p
     assert result(capsys.readouterr().out)["status"] == "running"
     monkeypatch.setattr(sys, "argv", ["main.py", "--knowledge-stats"])
     assert load_main().main() == 0
-    assert result(capsys.readouterr().out)["chunks"]["active"] == 0
+    stats = result(capsys.readouterr().out)
+    assert stats["chunks"]["active"] == 0
+    assert "status" not in stats  # Stats result intentionally has no status field.
     assert FakeClient.effects == [("run", RUN_ID), "stats"]
 
 
