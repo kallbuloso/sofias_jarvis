@@ -198,3 +198,43 @@ Se retornar `succeeded`, consultar `--knowledge-stats`;
 somente após fonte e chunks ativos, executar `--knowledge-query`
 com slug `jarvis-knowledge` e inspecionar proveniência dos resultados.
 Se `failed`, capturar `error_code`, sem novo envio/retry.
+
+
+## Evidência real — Pipeline concluído e dataset indexado (2026-10-31)
+
+O proprietário executou o comando somente de leitura
+`--knowledge-run 21899eed-281f-4399-a6f4-8d73750da71b` e recebeu:
+
+- `status=succeeded`, `progress=1.0`, `error_code=null`
+- `dataset_id=21100a21-d6e3-4dcc-a730-fe2f26111b5c`
+- `source_id=f4ed6afc-e540-473c-8f3b-f916e0ead739`
+- `document_id=4adee7a1-b52d-40fc-8c83-c691f0308bd1` (em
+  `metrics.remember_result`)
+- `metrics.remember_result.chunks=1`, `entities=20`, `relations=22`
+- `content_hash=a684bed7596e6d2f8f1d2a1d44a8ec65e96bf57851d8abd822bcd58c290269ed`
+- `deduplicated=false`
+
+Em `--knowledge-stats`, os contadores reais do dataset foram:
+
+| Tipo | Total | Ativos |
+|---|---:|---:|
+| Sources | 1 | 1 |
+| Documents | 1 | 1 |
+| Chunks | 1 | 1 |
+
+**Critério de pipeline/indexação: PASS.** O hash da fonte corresponde
+à amostra autorizada; há um documento e um chunk ativos no dataset.
+A criação de entidades e relações foi reportada pelo pipeline, mas a
+qualidade semântica dessas extrações não foi auditada individualmente.
+
+**Recuperação documental e proveniência permanecem pendentes.** Próxima
+prova exclusivamente por consulta:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --knowledge-query --knowledge-dataset jarvis-knowledge
+```
+
+Pergunta sugerida: `Por que o Core do JARVIS usa Modular Monolith e não microsserviços?`.
+Inspecionar `query_id`, `context`, `references` e seus IDs
+sem inferir citações inexistentes. `Recall` pode gerar registro de auditoria
+da Query no serviço; não reenvia o ADR nem cria memória cognitiva.
