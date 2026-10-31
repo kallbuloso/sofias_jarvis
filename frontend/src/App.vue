@@ -186,8 +186,6 @@ onMounted(async () => {
             class="mx-6 mt-4">Configure sua chave pelo console: main.py --configure-openai-key</v-alert>
           <v-alert v-if="warning" color="warning" variant="tonal" density="compact"
             class="mx-6 mt-4">{{ warning }}</v-alert>
-          <v-alert v-if="memoryNotice" color="info" variant="tonal" density="compact"
-            class="mx-6 mt-3">{{ memoryNotice }}</v-alert>
           <div class="history">
             <div v-if="!messages.length" class="empty">Conversa pronta. Envie sua primeira mensagem.</div>
             <div v-for="(m, i) in messages" :key="m.id || i"
@@ -214,6 +212,8 @@ onMounted(async () => {
             <span class="memory-caption" v-else>
               Desligado: esta conversa não consulta a memória.
             </span>
+            <div v-if="useMemory && memoryNotice" class="memory-feedback"
+              role="status" aria-live="polite">{{ memoryNotice }}</div>
           </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
@@ -250,8 +250,12 @@ html, body, #app { height: 100%; margin: 0; }
 .speaker { font-size: 11px; letter-spacing: 0.4px; color: #85d1c9; margin-bottom: 7px; }
 .content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .status { font-size: 11px; color: #c69d6b; margin-top: 6px; }
-.memory-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+.memory-bar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 10px 14px;
   padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
+.memory-feedback { flex: 0 0 100%; min-height: 0; max-height: 76px; overflow-y: auto;
+  align-self: flex-start; color: #7bceca; font-size: 12px; line-height: 1.45;
+  border-left: 2px solid #008080; padding: 4px 10px; background: rgba(0,128,128,.06);
+  overflow-wrap: anywhere; }
 .memory-scope { max-width: 240px; min-width: 180px; }
 .memory-caption { color: #82969e; font-size: 12px; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
