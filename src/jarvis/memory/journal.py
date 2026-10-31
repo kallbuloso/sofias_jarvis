@@ -49,7 +49,9 @@ class MemoryOperationJournal:
                     "SELECT service_url,lifecycle,marker FROM tb02_test_memories WHERE memory_id=?",
                     (target_memory_id,),
                 ).fetchone()
-                if not row or row["service_url"] != service_url or row["lifecycle"] != "active":
+                if not row or row["service_url"] != service_url or (
+                    row["lifecycle"] not in (("active",) if kind == "test_supersede" else ("active", "superseded"))
+                ):
                     raise ValueError("target_not_active_test_memory")
                 if payload.get("memory_id") != target_memory_id:
                     raise ValueError("test_target_mismatch")
@@ -231,7 +233,7 @@ class MemoryOperationJournal:
             now = _now()
             updated = db.execute(
                 "UPDATE tb02_test_memories SET lifecycle='forgotten',updated_at=? "
-                "WHERE memory_id=? AND lifecycle='active' AND service_url=?",
+                "WHERE memory_id=? AND lifecycle IN ('active','superseded') AND service_url=?",
                 (now,memory_id,row["service_url"]),
             )
             if updated.rowcount != 1:
