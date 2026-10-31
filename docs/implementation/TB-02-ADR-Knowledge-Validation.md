@@ -238,3 +238,44 @@ Pergunta sugerida: `Por que o Core do JARVIS usa Modular Monolith e não micross
 Inspecionar `query_id`, `context`, `references` e seus IDs
 sem inferir citações inexistentes. `Recall` pode gerar registro de auditoria
 da Query no serviço; não reenvia o ADR nem cria memória cognitiva.
+
+## Resultado observado — consulta documental (2026-10-31)
+
+Teste real concluído via `--knowledge-query --knowledge-dataset jarvis-knowledge`
+com pergunta sobre Modular Monolith versus microsserviços.
+
+- Resultado: `RESULTS_FOUND`; modo `chunks`; 1 contexto e 1 referência
+- `query_id=a7a09ded-706f-4627-8772-39d27bcf7651`
+- Dataset: `21100a21-d6e3-4dcc-a730-fe2f26111b5c`
+- Source: `f4ed6afc-e540-473c-8f3b-f916e0ead739`
+- Document: `4adee7a1-b52d-40fc-8c83-c691f0308bd1`
+- Chunk: `815aae96-91ad-506e-b566-9529d2903fd5`
+- `source_name=JARVIS ADR-0001 — Modular Monolith`
+- `reference.url=null`; `score=0.01639344262295082`
+
+Os identificadores Source/Document/Chunk da referência coincidem com
+os do contexto; Source/Document correspondem à ingestão. O texto recuperado
+é a decisão aprovada e responde à pergunta.
+
+**Knowledge Retrieval com proveniência: PASS no CLI.**
+O score não é interpretado como porcentagem de similaridade e não há
+URL navegável fornecida pela API. A prova cobre um documento e um chunk,
+não qualidade de ranking entre diversas fontes.
+
+## Próximo incremento — Knowledge no chat (código publicado; smoke pendente)
+
+Provider `KnowledgeAwareTextProvider` de ativação explícita, seleção
+limitada ao dataset `jarvis-knowledge`, contexto efêmero, sem alterar
+o transcript no SQLite e com referências ligadas ao dataset ativo.
+A CLI exibe identificadores reais depois da resposta.
+
+```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe main.py --chat --use-knowledge --knowledge-dataset jarvis-knowledge
+```
+
+O chat convencional, sem `--use-knowledge`, não faz consulta documental.
+O serviço poderá persistir auditoria da Query, mas não há ingestão
+adicional. **TB-02 permanece IN PROGRESS** até smoke conversacional,
+prova do caminho OFF e integração no desktop. Sem merge em `main`.
