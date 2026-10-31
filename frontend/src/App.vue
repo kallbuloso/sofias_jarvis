@@ -18,6 +18,26 @@ const scopeItems = [
   { title: 'Global', value: 'global' },
   { title: 'Projeto JARVIS', value: 'project:jarvis' },
 ]
+// Render only a small, explicitly supported subset of inline Markdown.
+ // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
+function inlineParts(value) {
+  const text = typeof value === 'string' ? value : ''
+  const parts = []
+  const pattern = /\*\*([^*\n]+)\*\*/g
+  let cursor = 0
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > cursor) {
+      parts.push({ text: text.slice(cursor, match.index), bold: false })
+    }
+    parts.push({ text: match[1], bold: true })
+    cursor = match.index + match[0].length
+  }
+  if (cursor < text.length || !parts.length) {
+    parts.push({ text: text.slice(cursor), bold: false })
+  }
+  return parts
+}
+
 const historyEnd = ref(null)
 let bridge = null
 
@@ -182,16 +202,22 @@ onMounted(async () => {
               variant="outlined" density="compact" hide-details
               placeholder="Digite o modelo habilitado"/>
           </div>
-          <v-alert v-if="!credentialConfigured" color="warning" variant="tonal" density="compact"
-            class="mx-6 mt-4">Configure sua chave pelo console: main.py --configure-openai-key</v-alert>
-          <v-alert v-if="warning" color="warning" variant="tonal" density="compact"
-            class="mx-6 mt-4">{{ warning }}</v-alert>
+          <div v-if="!credentialConfigured" class="inline-alert" role="alert">
+            Configure sua chave pelo console: main.py --configure-openai-key
+          </div>
+          <div v-if="warning" class="inline-alert" role="alert" aria-live="assertive">
+            {{ warning }}
+          </div>
           <div class="history">
             <div v-if="!messages.length" class="empty">Conversa pronta. Envie sua primeira mensagem.</div>
             <div v-for="(m, i) in messages" :key="m.id || i"
               class="message" :class="m.role === 'user' ? 'mine' : 'assistant'">
               <div class="speaker">{{ m.role === 'user' ? 'Você' : 'JARVIS' }}</div>
-              <div class="content">{{ m.content || (m.status === 'streaming' ? 'Respondendo…' : '') }}</div>
+              <div class="content">
+                <template v-for="(part, j) in inlineParts(m.content || (m.status === 'streaming' ? 'Respondendo…' : ''))" :key="j">
+                  <strong v-if="part.bold">{{ part.text }}</strong><template v-else>{{ part.text }}</template>
+                </template>
+              </div>
               <div v-if="m.status !== 'completed'" class="status">{{ m.status }}</div>
             </div>
             <div ref="historyEnd"></div>
@@ -242,6 +268,10 @@ html, body, #app { height: 100%; margin: 0; }
 .heading { font-size: 20px; font-weight: 600; }
 .small-text { font-size: 12px; color: #82969e; }
 .model-input { max-width: 300px; }
+.inline-alert { flex: 0 0 auto; align-self: stretch; margin: 10px 26px 0;
+  padding: 10px 12px; border-left: 2px solid #de9d48; border-radius: 5px;
+  background: rgba(222,157,72,.09); color: #edb968; font-size: 13px;
+  line-height: 1.45; overflow-wrap: anywhere; }
 .history { flex: 1; overflow-y: auto; padding: 26px 8%; min-height: 0; }
 .empty { text-align: center; color: #82969e; margin-top: 18vh; }
 .message { max-width: 76%; margin-bottom: 18px; padding: 13px 17px;
