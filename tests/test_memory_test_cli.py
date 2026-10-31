@@ -34,7 +34,7 @@ class FakeCognitive:
         return {"status": "COMPATIBLE"}
 
     def create(self, *, memory_type, scope, content, provenance, idempotency_key):
-        self.created_calls += 1
+        type(self).created_calls += 1
         return {
             "memory_id": "fe32e0bf-f0b6-45ef-a775-390eb4f1aef5",
             "memory_type": memory_type, "scope": scope, "content": content,
@@ -117,3 +117,56 @@ def test_no_implicit_new_memory_id_or_other_side_effects(monkeypatch, tmp_path, 
     result = json.loads(capsys.readouterr().out)
     assert result["items"] == []
     assert FakeCognitive.created_calls == 0
+
+
+
+def test_supersede_cancellation_never_calls_mutating_method(monkeypatch, tmp_path, capsys):
+    setup(monkeypatch, tmp_path)
+    from jarvis.memory import test_lifecycle
+
+    target = "fe32e0bf-f0b6-45ef-a775-390eb4f1aef5"
+    calls = []
+    def preview(self, memory_id, *, action):
+        calls.append(("preview", memory_id, action))
+        return {"memory_id": target, "scope": "project:jarvis",
+                "content": TEST_A, "lifecycle": "active"}
+    def supersede(self, memory_id):
+        calls.append(("supersede", memory_id))
+        return {"status": "CONFIRMED"}
+    monkeypatch.setattr(test_lifecycle.TestMemoryLab, "preview", preview)
+    monkeypatch.setattr(test_lifecycle.TestMemoryLab, "supersede", supersede)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--memory-test-supersede", target])
+    monkeypatch.setattr("builtins.input", lambda _: "SUBSTITUIR")
+    assert load_main().main() == 0
+    assert calls == [("preview", target, "supersede")]
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["status"] == "CANCELLED"
+
+
+def test_forget_needs_exact_target_uuid_confirmation(monkeypatch, tmp_path, capsys):
+    setup(monkeypatch, tmp_path)
+    from jarvis.memory import test_lifecycle
+
+    target = "fe32e0bf-f0b6-45ef-a775-390eb4f1aef5"
+    calls = []
+    def preview(self, memory_id, *, action):
+        calls.append(("preview", memory_id, action))
+        return {"memory_id": target, "scope": "project:jarvis",
+                "content": TEST_B, "lifecycle": "active"}
+    def forget(self, memory_id):
+        calls.append(("forget", memory_id))
+        return {"status": "CONFIRMED", "memory_id": memory_id}
+    monkeypatch.setattr(test_lifecycle.TestMemoryLab, "preview", preview)
+    monkeypatch.setattr(test_lifecycle.TestMemoryLab, "forget", forget)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--memory-test-forget", target])
+    responses = iter(["ESQUECER", f"ESQUECER {target}"])
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+    assert load_main().main() == 0
+    assert calls == [("preview", target, "forget")]
+    capsys.readouterr()
+    assert load_main().main() == 0
+    assert calls[-3:] == [
+        ("preview", target, "forget"),
+        ("preview", target, "forget"),
+        ("forget", target),
+    ]
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["status"] == "CONFIRMED"
