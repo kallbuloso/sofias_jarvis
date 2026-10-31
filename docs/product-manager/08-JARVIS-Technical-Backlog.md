@@ -5,12 +5,12 @@
 | **Projeto** | JARVIS — assistente pessoal universal |
 | **Fase** | 08 — Technical Backlog |
 | **Estado deste documento** | **BASELINE DE PLANEJAMENTO APROVADA** — roadmap inicial TB-01 a TB-08 e plano do TB-01 aprovados pelo proprietário |
-| **Estado de implementação** | **NOT STARTED** — aprovação de planejamento não é evidência de código implementado nem de Product Done |
+| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31)** — ver `docs/implementation/TB-01-Validation.md`; TB-02 a TB-08 continuam somente no roadmap |
 | **Data** | 2026-10-30 |
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | Preparar execução do TB-01 em repositório JARVIS próprio, sem iniciar outros Slices |
+| **Próxima atividade** | Revisar Pull Request do TB-01 e obter aprovação explícita antes do merge; planejar TB-02 separadamente |
 
 > **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 a TB-08 são **itens de roadmap**, não Slices detalhados ou autorizados para implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
@@ -33,7 +33,7 @@
 
 # TB-01 — Primeira conversa funcional
 
-**Status:** **APPROVED (planning)** · **Implementation:** NOT STARTED
+**Status:** **PRODUCT DONE** (validação humana em 2026-10-31; registro em `docs/implementation/TB-01-Validation.md`)
 
 ## Objective
 
@@ -156,7 +156,7 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 4. Registro dos achados técnicos da prova da UI e das pendências ainda abertas para voz/confirmações.
 5. Código e documentação versionados no repositório JARVIS; critérios `TB01-AC01..08` verificados.
 
-**Implementação NÃO iniciada. Nenhuma evidência de conclusão foi apresentada ainda.**
+**Implementação realizada e validação funcional concluída em 2026-10-31.** Evidências, limitações e rastreabilidade: `docs/implementation/TB-01-Validation.md`. Merge na `main` continua sujeito à aprovação.
 
 ---
 
@@ -167,8 +167,14 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 | **Project** | JARVIS |
 | **Current phase** | 08 — Technical Backlog |
 | **Current artifact** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
-| **Current Slice** | TB-01 — plano APPROVED; implementação NOT STARTED |
-| **Next legitimate step** | Salvar este documento, identificar repositório de implementação e preparar a execução sob as decisões aprovadas |
-| **Forbidden inference** | TB-02 a TB-08 não estão aprovados como planos executáveis; a UI híbrida não está definitivamente escolhida; Product Done não foi atingido |
+| **Current Slice** | TB-01 — PRODUCT DONE; PR para revisão/merge |
+| **Next legitimate step** | Revisar PR do TB-01 e obter autorização para merge; TB-02 exige planejamento e aprovação próprios |
+| **Forbidden inference** | TB-02 a TB-08 não estão aprovados como planos executáveis; a viabilidade da UI foi demonstrada no TB-01, mas não implica validação futura de voz e confirmações; merge não autorizado automaticamente |
 
 *Fim de JARVIS — Technical Backlog (baseline inicial).* 
+
+---
+
+## 4. Registro de conclusão do TB-01 (2026-10-31)
+
+O estado **NOT STARTED** nas seções originais de planejamento foi substituído por **PRODUCT DONE** após execução e evidência. O registro completo e as limitações estão em `docs/implementation/TB-01-Validation.md`. Este adendo não autoriza merge, não altera os Slices futuros e não aprova nova stack.
