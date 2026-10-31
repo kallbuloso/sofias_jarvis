@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, nextTick, ref } from 'vue'
+import { onMounted, nextTick, ref, watch } from 'vue'
 
 const ready = ref(false)
 const conversations = ref([])
@@ -37,6 +37,14 @@ function inlineParts(value) {
   }
   return parts
 }
+
+watch([useMemory, memoryScope], () => {
+  // Retrieval evidence belongs to the last completed request and scope.
+  memoryNotice.value = ''
+  if (memoryScope.value && warning.value === 'Selecione um escopo antes de consultar o Sofias Memory.') {
+    warning.value = ''
+  }
+})
 
 const historyEnd = ref(null)
 let bridge = null
