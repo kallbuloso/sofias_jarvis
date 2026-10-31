@@ -80,7 +80,8 @@ class KnowledgeAwareTextProvider:
                 break
             if not rows:
                 raise ValueError("invalid_knowledge_dataset_pagination")
-        if len(matches) != 1 or matches[0]["status"] != "active":
+        if (len(matches) != 1 or matches[0]["status"] != "active"
+                or matches[0]["name"] != "JARVIS Knowledge"):
             raise ValueError("knowledge_dataset_not_active")
         return _uuid(matches[0]["dataset_id"])
 
