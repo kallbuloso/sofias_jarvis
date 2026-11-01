@@ -309,3 +309,88 @@ def test_conversational_create_remote_unknown_never_retries(lifecycle):
     assert audit["status"] == "unknown"
     assert audit["confirmation_method"] == "desktop_approved"
     assert sum(c[0] == "create" for c in lifecycle.client.calls) == 1
+
+
+def test_direct_user_request_create_is_audited_by_original_message(lifecycle):
+    from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+    store = lifecycle.journal._store
+    conversation = store.create_conversation()
+    phrase = ("JARVIS, lembre que no projeto JARVIS "
+              "a palavra de teste é morango.")
+    source_message = store.append_user_message(conversation, phrase)
+    consent = PersonalMutationAuthorization.from_explicit_user_message(
+        action="create", conversation_id=conversation, message_id=source_message,
+    )
+    result = lifecycle.create(
+        content="no projeto JARVIS a palavra de teste é morango",
+        scope="project:jarvis", conversation_id=conversation,
+        confirmation=consent,
+    )
+    assert result["status"] == "CONFIRMED"
+    record = lifecycle.journal.get(result["operation_id"])
+    assert record["confirmation_ref"] == "user-message:" + source_message
+    assert record["confirmation_method"] == "user_direct_intent"
+    assert record["confirmation_conversation_id"] == conversation
+    assert record["status"] == "confirmed"
+    saved = lifecycle.client.memories[result["memory_id"]]
+    assert saved["provenance"]["confirmation_ref"] == record["confirmation_ref"]
+    assert saved["provenance"]["source_ref"] == (
+        "memory-operation:" + result["operation_id"]
+    )
+    assert lifecycle.journal.owned_user_memory(result["memory_id"], URL)
+    with sqlite3.connect(store.path) as db:
+        assert db.execute(
+            "SELECT payload_json FROM cognitive_write_operations WHERE id=?",
+            (result["operation_id"],),
+        ).fetchone()[0] is None
+    # Same source message cannot be replayed even after payload scrubbing.
+    with pytest.raises(sqlite3.IntegrityError):
+        lifecycle.create(
+            content="no projeto JARVIS a palavra de teste é morango",
+            scope="project:jarvis", conversation_id=conversation,
+            confirmation=consent,
+        )
+    assert sum(call[0] == "create" for call in lifecycle.client.calls) == 1
+
+
+def test_direct_create_never_accepts_altered_scope_or_content(lifecycle):
+    from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+    store = lifecycle.journal._store
+    conversation = store.create_conversation()
+    message = store.append_user_message(
+        conversation, "JARVIS, lembre que no projeto JARVIS prefiro Python."
+    )
+    consent = PersonalMutationAuthorization.from_explicit_user_message(
+        action="create", conversation_id=conversation, message_id=message,
+    )
+    for content, scope in (
+        ("no projeto JARVIS prefiro outra coisa", "project:jarvis"),
+        ("no projeto JARVIS prefiro Python", "global"),
+    ):
+        with pytest.raises(ValueError, match="direct_create_not_authorized"):
+            lifecycle.create(content=content, scope=scope,
+                             conversation_id=conversation, confirmation=consent)
+    assert lifecycle.client.calls == []
+
+
+def test_direct_create_requires_persisted_exact_user_message(lifecycle):
+    from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+    store = lifecycle.journal._store
+    conversation = store.create_conversation()
+    fake_id = str(uuid4())
+    consent = PersonalMutationAuthorization.from_explicit_user_message(
+        action="create", conversation_id=conversation, message_id=fake_id,
+    )
+    with pytest.raises(ValueError, match="direct_create_not_authorized"):
+        lifecycle.create(content="prefiro teal", scope="global",
+                         conversation_id=conversation, confirmation=consent)
+    message = store.append_user_message(
+        conversation, "Qual seria a frase 'JARVIS, lembre que prefiro teal'?"
+    )
+    consent2 = PersonalMutationAuthorization.from_explicit_user_message(
+        action="create", conversation_id=conversation, message_id=message,
+    )
+    with pytest.raises(ValueError, match="direct_create_not_authorized"):
+        lifecycle.create(content="prefiro teal", scope="global",
+                         conversation_id=conversation, confirmation=consent2)
+    assert lifecycle.client.calls == []
