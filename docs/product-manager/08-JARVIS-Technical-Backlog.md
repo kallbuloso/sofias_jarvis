@@ -465,3 +465,40 @@ single-ADR pilot and should not be claimed as validated.
 See `docs/implementation/TB-02-Final-Acceptance-Review.md` §6
 and `docs/implementation/TB-02-B02-Message-Evidence.md`.
 The branch remains isolated; **no merge** or TB-03 work was authorized.
+
+## 19. Text-first conversational correction and local conversation cleanup
+
+Owner clarified that **desktop chat must be natural-language-first**.
+Exposing slash commands and UUIDs as the primary user interface was a
+misinterpretation of the JARVIS product, even if equivalent CLI commands
+remain useful for diagnostics. Text is the first milestone; audio input,
+microphone capture, TTS and voice confirmation are deferred until the
+text path works end-to-end.
+
+The feature branch now contains a first, **NOT YET ACCEPTED** vertical
+increment: strictly typed text intent classification, automatic
+read-only Cognitive Recall/Knowledge selection using existing providers,
+single desktop `sendConversationalMessage` entry, and removal of manual
+Memory/Knowledge switches and slash-help banner from the UI.
+Unimplemented memory writes and scheduler requests are **recognized
+but not executed**; the UI receives an explicit no-operation response,
+never a fabricated success. Intent model failure also fails closed.
+
+Owner also requested removing numerous old conversations during
+development. Sidebar now has a per-conversation **Excluir** action with
+confirmation; deletion cascades only local transcript and its verified
+per-message Knowledge evidence. It does not delete Sofias Memory
+records or JARVIS audit journal, rejects active operations, and does not
+recreate an empty conversation after the last deletion.
+
+The increment has new offline test fixtures; owner Windows pytest,
+frontend build, startup/shutdown and real model classification remain
+pending. **TB-02 Product Done remains NOT ACCEPTED**, and neither
+merge nor TB-03 has been authorized.
+
+The next legitimate text milestone is **natural-language Create,
+Supersede and Forget with structured proposed operation, target and
+scope resolution, user-friendly approval bound to one operation, durable
+audit and real ACK**; no typed UUIDs, no side effect from model output
+alone. Scheduling remains a different product capability.
+See `docs/implementation/TB-02-Conversational-Text-Increment-1.md`.
