@@ -41,6 +41,15 @@ _INSTRUCTION = re.compile(
     r"contorne\s+(?:a\s+)?autoriza[cç][aã]o)\b",
     re.I,
 )
+_SENSITIVE = re.compile(
+    r"\b(?:cpf|cnpj|rg|passaporte|endere[cç]o|cep|telefone|celular|"
+    r"n[uú]mero\s+do\s+cart[aã]o|cart[aã]o\s+de\s+cr[eé]dito|"
+    r"conta\s+banc[aá]ria|chave\s+pix|sal[aá]rio|"
+    r"diagn[oó]stico|doen[cç]a|tratamento\s+m[eé]dico|"
+    r"resultado\s+de\s+exame|prontu[aá]rio)\b",
+    re.I,
+)
+_EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -67,7 +76,8 @@ def evaluate_direct_create(utterance: str, *, classified_action: str) -> CreateD
         return CreateDecision("DENIED", "complex_or_ambiguous_request")
     if _TEMPORAL.search(content):
         return CreateDecision("DENIED", "temporal_request_is_not_cognitive_memory")
-    if looks_like_credential(content):
+    if (looks_like_credential(content) or _SENSITIVE.search(content)
+            or _EMAIL.search(content)):
         return CreateDecision("DENIED", "sensitive_content_rejected")
     has_project = bool(_PROJECT.search(content))
     has_other_project = bool(_OTHER_PROJECT.search(content))
