@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _now() -> str:
@@ -118,6 +118,20 @@ class SQLiteConversationStore:
                     AND status IN ('prepared','in_flight','unknown')
                 """)
                 db.execute("PRAGMA user_version = 3")
+                version = 3
+            if version == 3:
+                # Durable consent metadata stays after operation payload scrubbing.
+                # Historical rows remain NULL; never synthesize retroactive approval.
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN confirmation_ref TEXT")
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN confirmation_method TEXT")
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN confirmation_conversation_id TEXT")
+                db.execute("ALTER TABLE cognitive_write_operations ADD COLUMN confirmed_by_user_at TEXT")
+                db.execute("""
+                    CREATE UNIQUE INDEX idx_cognitive_confirmation_ref
+                    ON cognitive_write_operations(confirmation_ref)
+                    WHERE confirmation_ref IS NOT NULL
+                """)
+                db.execute("PRAGMA user_version = 4")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
