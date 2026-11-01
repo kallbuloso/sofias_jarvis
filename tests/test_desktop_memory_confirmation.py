@@ -131,7 +131,11 @@ def test_desktop_mutation_worker_journals_typed_consent(monkeypatch, tmp_path):
     monkeypatch.setattr(cognitive, "CognitiveMemoryClient", FakeService)
     conversation_id = str(uuid4())
     gate = PersonalMutationGate()
-    preview = {**record, "source_ref": source_ref}
+    preview = {
+        "memory_id": memory_id, "content": "Laranja",
+        "memory_type": "semantic", "scope": "project:jarvis",
+        "lifecycle": "active", "source_ref": source_ref,
+    }
     token, phrase = gate.offer("forget", preview, "", conversation_id)
     pending = gate.consume(token, phrase, conversation_id)
     worker = MemoryMutationWorker(pending)
