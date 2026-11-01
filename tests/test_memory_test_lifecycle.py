@@ -170,7 +170,8 @@ def test_local_reopen_preserves_lineage_and_conflicts(tmp_path, lab):
     assert reopened.test_item(root)["lifecycle"] == "superseded"
     assert reopened.test_item(new)["lifecycle"] == "active"
     with sqlite3.connect(tmp_path / "state.sqlite3") as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        # This is a current database reopened, not a historical v3 fixture.
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_existing_non_test_create_journal_does_not_become_test_allowlist(tmp_path):
