@@ -39,12 +39,24 @@ class PersonalMutationAuthorization:
         )
 
     @classmethod
-    def from_desktop_approval(cls, *, action: str, conversation_id: str):
-        """Recorded single-click approval for a bounded, previously previewed Create."""
-        if action != "create":
-            raise ValueError("desktop_approval_create_only")
-        return cls(str(uuid4()), "create", None, "desktop_approved",
-                   str(UUID(conversation_id)))
+    def from_desktop_approval(
+        cls, *, action: str, conversation_id: str,
+        target_memory_id: str | None = None,
+    ):
+        """Recorded single-click approval for one bounded desktop operation."""
+        conversation_id = str(UUID(conversation_id))
+        if action == "create":
+            if target_memory_id is not None:
+                raise ValueError("unexpected_create_target")
+            target = None
+        elif action in {"supersede", "forget"}:
+            if target_memory_id is None:
+                raise ValueError("desktop_approval_target_required")
+            target = str(UUID(target_memory_id))
+        else:
+            raise ValueError("invalid_desktop_approval_action")
+        return cls(str(uuid4()), action, target, "desktop_approved",
+                   conversation_id)
 
     @classmethod
     def from_typed_confirmation(cls, *, action: str, target_memory_id: str | None,
@@ -144,6 +156,24 @@ class PersonalMutationGate:
             action=pending.action, target_memory_id=target,
             phrase=phrase, method="desktop_typed",
             conversation_id=pending.conversation_id,
+        )
+        return replace(pending, authorization=consent)
+
+    def approve(self, token: str, conversation_id: str) -> PendingPersonalMutation:
+        """Single-click desktop approval for an already previewed mutation."""
+        pending, expected = self._pending, self._token
+        self.clear()
+        if pending is None or not isinstance(token, str) or token != expected:
+            raise ValueError("authorization_missing_or_invalid")
+        if self._now() > pending.expires_at:
+            raise ValueError("authorization_expired")
+        if str(UUID(conversation_id)) != pending.conversation_id:
+            raise ValueError("authorization_wrong_conversation")
+        target = str(UUID(pending.preview["memory_id"]))
+        consent = PersonalMutationAuthorization.from_desktop_approval(
+            action=pending.action,
+            conversation_id=pending.conversation_id,
+            target_memory_id=target,
         )
         return replace(pending, authorization=consent)
 
