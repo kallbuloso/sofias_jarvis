@@ -170,6 +170,8 @@ function handleStream(raw) {
       memoryAuthorizationToken.value = event.authorizationToken
       memoryRequiredPhrase.value = event.requiredPhrase || ''
       memoryAuthorizationInput.value = ''
+      memoryPreviewReplacement.value =
+        typeof event.replacement === 'string' ? event.replacement : ''
       memoryApprovalMode.value = clickApproval ? 'click' : 'typed'
       memoryPreviewDialog.value = true
     } else {
