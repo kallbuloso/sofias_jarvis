@@ -242,7 +242,7 @@ class SQLiteConversationStore:
                     raise ValueError("invalid_knowledge_reference_identity")
                 ids[key] = value
             name = reference.get("source_name")
-            if not isinstance(name, str) or not 1 <= len(name) <= 200:
+            if not isinstance(name, str) or len(name) > 200:
                 raise ValueError("invalid_knowledge_source_name")
             safe.append({"source_name": name, **ids})
         with self._connection() as db:
