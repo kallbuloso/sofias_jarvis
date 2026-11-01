@@ -287,3 +287,57 @@ do teste funcional realizado antes do encerramento.
 
 **Status:** estabilidade em observação; TB-02 IN PROGRESS. Não há
 autorização de merge para `main` ou avanço para TB-03.
+
+
+## Aceite humano do smoke de estabilidade Qt (registro 2026-10-31)
+
+Após o ajuste do `QThread.finished` para o slot GUI-afine, o proprietário
+confirmou a execução real com diagnósticos ativados e três conversas
+funcionais na mesma sessão, incluindo os dois providers de contexto
+ativados simultaneamente.
+
+**Evidência automatizada:** `172 passed in 4.90s` no Windows.
+**Evidência do host:** `JARVIS_EXIT_CODE=0`, sem
+`Fatal Python error: Aborted` nem mensagem
+`QDxgiVSyncService not destroyed in time` nesta execução.
+
+O registro `desktop-lifecycle.jsonl` (PID `15296`, thread da GUI
+`14792`, UTC de 2026-11-01 00:23:53 a 00:27:36) confirma:
+
+| Caso | Thread de worker | Resultado |
+|---|---:|---|
+| Chat normal, Cognitive OFF, Knowledge OFF | 43556 | `reply_worker_end=completed`; `memory_status=NOT_REQUESTED` |
+| Chat Knowledge ON, Cognitive OFF | 18640 | `reply_worker_end=completed`; `memory_status=NOT_REQUESTED` |
+| Chat Cognitive ON + Knowledge ON | 38892 | `reply_worker_end=completed`; `memory_status=RESULTS_FOUND` |
+
+Em todos os casos, `bridge_worker_done_received` foi entregue à thread
+`14792`, seguido de `bridge_thread_finished` com
+`in_gui_thread=true`, sem thread pendente observada.
+O evento `bridge_thread_started` aparece depois de
+`reply_worker_end` por processamento tardio do sinal enfileirado
+na GUI; não implica início físico tardio do worker.
+
+Sequência final observada:
+
+```text
+window_close_requested (worker_active=false)
+window_close_accepted
+qt_about_to_quit
+qt_event_loop_exit (exit_code=0)
+```
+
+**Resultado:** o smoke funcional e de estabilidade após a alteração
+está **PASS**; o bloqueio imediato de encerramento inesperado é
+considerado mitigado para avançar à revisão final do TB-02.
+
+**Limite da evidência:** esta é uma sessão completa com três interações
+representativas; não demonstra que o crash intermitente original
+nunca poderá ocorrer novamente nem prova definitivamente sua causa.
+Não foi feita inspeção nativa de dump ou teste prolongado. Preservar
+a instrumentação opt-in e tratar novo `abort` como regressão
+bloqueante. A equipe não deve chamar o incidente de causa-raiz
+resolvida sem nova evidência.
+
+**Próximo passo:** revisão consolidada do aceite do Slice TB-02
+(Cognitive Memory, Knowledge, desktop, segurança e documentação).
+Isso não autoriza merge para `main` nem implantação do TB-03.
