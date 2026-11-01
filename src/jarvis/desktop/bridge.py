@@ -428,6 +428,7 @@ class JarvisBridge(QObject):
         self._mutation_gate = PersonalMutationGate()
         from jarvis.memory.personal_confirmation import PersonalCreateGate
         self._create_gate = PersonalCreateGate()
+        self._deferred_create_proposal: dict | None = None
         self._mutation_thread: QThread | None = None
         self._mutation_worker: MemoryMutationWorker | None = None
 
@@ -738,6 +739,7 @@ class JarvisBridge(QObject):
         if self.active or self._closing:
             return _json({"ok": False, "error": "busy"})
         self._create_gate.clear()
+        self._deferred_create_proposal = None
         if not model.strip() or not prompt.strip():
             return _json({"ok": False, "error": "missing_text_or_model"})
         if self._store.get_conversation(conversation_id) is None:
@@ -831,7 +833,12 @@ class JarvisBridge(QObject):
                 "conversationId": conversation_id,
                 "error": "invalid_or_sensitive_create_proposal",
             }
-        self.streamEvent.emit(_json(payload))
+        if self._thread is None:
+            self.streamEvent.emit(_json(payload))
+        else:
+            # Do not offer a clickable write button until the reply thread
+            # is fully quiescent. Otherwise confirm may race the busy gate.
+            self._deferred_create_proposal = payload
 
     @Slot(str, str, str, str)
     def _on_done(self, conversation_id: str, result: str, error_code: str,
@@ -857,11 +864,20 @@ class JarvisBridge(QObject):
         self._thread = None
         self._worker = None
         thread.deleteLater()
+        pending = self._deferred_create_proposal
+        self._deferred_create_proposal = None
+        if pending is not None:
+            if (not self._closing and self._store.get_conversation(
+                    pending["conversationId"]) is not None):
+                self.streamEvent.emit(_json(pending))
+            else:
+                self._create_gate.clear()
         if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
     def request_shutdown(self) -> None:
         self._create_gate.clear()
+        self._deferred_create_proposal = None
         trace("bridge_shutdown_requested", worker_active=self.active)
         self._mutation_gate.clear()
         self._closing = True
