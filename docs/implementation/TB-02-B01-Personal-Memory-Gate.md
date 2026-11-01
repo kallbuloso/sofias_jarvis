@@ -247,3 +247,31 @@ Expected: active `project:jarvis/semantic` memory, original disposable
 content and confirmed local operation associated with the same memory
 UUID. No Supersede/Forget has yet been authorized for this record,
 and the real `global/profile` teal preference remains out of scope.
+
+## B-01c — independent Get and local journal check (2026-11-01)
+
+Owner independently verified the **new disposable** personal memory
+`c55f0c57-2b22-43f0-924b-191eb0688c2f` with
+`main.py --memory-get`:
+
+- `memory_type=semantic`, `scope=project:jarvis`, `lifecycle=active`
+- Content: `JARVIS TB-02 B01C TESTE DESCARTAVEL: minha cor de teste é laranja.`
+- `superseded_at=null`, `superseded_by=null`, `forgotten_at=null`
+- Provenance: `user_asserted / jarvis` and
+  `source_ref=memory-operation:c6399b83-9c9a-43df-a51d-18e283d88cd7`
+
+Owner independently verified with
+`main.py --memory-operation c6399b83-9c9a-43df-a51d-18e283d88cd7`
+that local journal status is `confirmed`, `error_code=null` and
+`memory_id` matches the remote UUID above. **PASS** for pre-mutation
+ownership and journal consistency.
+
+**Next test authorized by previous gated test plan:** launch desktop,
+run `/atualizar c55f0c57-2b22-43f0-924b-191eb0688c2f |
+JARVIS TB-02 B01C TESTE DESCARTAVEL: minha cor de teste é azul.`,
+review exact target/content, and manually type
+`SUBSTITUIR c55f0c57-2b22-43f0-924b-191eb0688c2f` only if the
+preview matches. Inspect operation result; do not retry an ambiguous
+outcome. Verify old record `superseded`, identify new active UUID,
+and check local journal. Do not proceed to Forget yet. Preserved
+global/profile teal memory remains out of scope.
