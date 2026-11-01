@@ -191,6 +191,15 @@ function handleStream(raw) {
       createScope.value = ''
     }
     if (event.ok && event.status === 'CONFIRMED') {
+      if (event.action === 'create') {
+        if (event.transcriptPersisted === false) {
+          warning.value = 'Memória gravada, mas a confirmação não pôde ser salva no histórico.'
+        }
+        if (selected.value) {
+          openConversation(selected.value, true).catch(() => {})
+          refreshConversations().catch(() => {})
+        }
+      }
       memoryNotice.value = event.action === 'create'
         ? 'Informação guardada no Sofias Memory com confirmação do serviço.'
         : event.replacementMemoryId
