@@ -187,3 +187,116 @@ def test_bridge_single_entry_dispatches_model_without_manual_switch(tmp_path, mo
     assert captured == [((cid, "Lembre o ADR", "model"), {
         "memory_scope": None, "knowledge_dataset": None, "conversational": True,
     })]
+
+
+def test_user_direct_create_executes_once_with_persisted_message_receipt(
+        tmp_path, monkeypatch):
+    from jarvis.memory.journal import MemoryOperationJournal
+    environment(monkeypatch, tmp_path, "memory_create")
+    calls = []
+
+    class Writer:
+        base_url = "https://memory.example"
+
+        def __init__(self, url, key):
+            assert url == self.base_url and key == "PRIVATE-TEST-MEMORY"
+
+        def diagnose(self):
+            return {"status": "COMPATIBLE"}
+
+        def create(self, *, memory_type, scope, content, provenance, idempotency_key):
+            calls.append((scope, content, dict(provenance), idempotency_key))
+            return {
+                "memory_id": str(uuid4()), "memory_type": memory_type,
+                "scope": scope, "content": content,
+                "lifecycle": "active", "provenance": dict(provenance),
+            }
+
+    monkeypatch.setattr(cognitive, "CognitiveMemoryClient", Writer)
+    db = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = db.create_conversation()
+    worker = ReplyWorker(
+        cid, "JARVIS, lembre que no projeto JARVIS a palavra de teste é morango.",
+        "model", "PRIVATE", conversational=True,
+    )
+    proposed = []
+    worker.createProposed.connect(lambda *args: proposed.append(args))
+    worker.run()
+    messages = SQLiteConversationStore(db.path).list_messages(cid)
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["status"] == "completed"
+    assert "Guardei essa informação" in messages[1]["content"]
+    assert proposed == []  # explicit low-risk Create has no second-click dialog
+    assert len(calls) == 1
+    assert calls[0][0] == "project:jarvis"
+    assert calls[0][1] == "no projeto JARVIS a palavra de teste é morango"
+    journal = MemoryOperationJournal(db.path)
+    with journal._store._connection() as sqlite:
+        row = sqlite.execute(
+            "SELECT id FROM cognitive_write_operations "
+            "WHERE confirmation_ref=?",
+            ("user-message:" + messages[0]["id"],),
+        ).fetchone()
+    assert row is not None
+    audit = journal.get(row["id"])
+    assert audit["status"] == "confirmed"
+    assert audit["confirmation_method"] == "user_direct_intent"
+    assert audit["confirmation_conversation_id"] == cid
+    assert calls[0][2]["confirmation_ref"] == audit["confirmation_ref"]
+    assert calls[0][2]["source_ref"] == "memory-operation:" + row["id"]
+
+
+def test_direct_create_ambiguous_scope_does_not_touch_memory(tmp_path, monkeypatch):
+    calls, memory_calls, knowledge_calls = environment(
+        monkeypatch, tmp_path, "memory_create",
+    )
+    db = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = db.create_conversation()
+    worker = ReplyWorker(
+        cid, "JARVIS, lembre que a palavra de teste é morango.",
+        "model", "PRIVATE", conversational=True,
+    )
+    worker.run()
+    assert "preferência geral" in db.list_messages(cid)[-1]["content"]
+    assert worker.direct_create is None
+    assert memory_calls == knowledge_calls == []
+    assert [x["stream"] for x in calls] == [False]
+
+
+def test_direct_create_remote_result_unknown_does_not_claim_saved(tmp_path, monkeypatch):
+    from jarvis.memory.cognitive import CognitiveMemoryError
+    from jarvis.memory.journal import MemoryOperationJournal
+    environment(monkeypatch, tmp_path, "memory_create")
+    attempts = []
+
+    class UnknownWriter:
+        base_url = "https://memory.example"
+
+        def __init__(self, url, key):
+            pass
+
+        def diagnose(self):
+            return {"status": "COMPATIBLE"}
+
+        def create(self, **kwargs):
+            attempts.append(kwargs)
+            raise CognitiveMemoryError("RESULT_UNKNOWN")
+
+    monkeypatch.setattr(cognitive, "CognitiveMemoryClient", UnknownWriter)
+    db = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = db.create_conversation()
+    worker = ReplyWorker(
+        cid, "JARVIS, lembre que no projeto JARVIS o teste usa morango.",
+        "model", "PRIVATE", conversational=True,
+    )
+    worker.run()
+    assert len(attempts) == 1
+    assert "não confirmou" in db.list_messages(cid)[-1]["content"]
+    assert "Não vou repetir" in db.list_messages(cid)[-1]["content"]
+    with MemoryOperationJournal(db.path)._store._connection() as conn:
+        status = conn.execute(
+            "SELECT status FROM cognitive_write_operations"
+        ).fetchone()[0]
+    assert status == "unknown"
