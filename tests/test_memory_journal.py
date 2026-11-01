@@ -89,12 +89,13 @@ def test_existing_v1_database_is_migrated_without_losing_messages(tmp_path):
     conv = old.create_conversation()
     old.append_user_message(conv, "Histórico antigo")
     with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE message_knowledge_evidence")
         db.execute("DROP TABLE cognitive_write_operations")
         db.execute("PRAGMA user_version = 1")
     new = SQLiteConversationStore(path)
     assert new.list_messages(conv)[0]["content"] == "Histórico antigo"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
         assert db.execute("SELECT name FROM sqlite_master WHERE name='cognitive_write_operations'").fetchone()
 
 
@@ -122,6 +123,7 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
         # Reconstruct a REAL v2 schema, not just a v2 user_version.
         # Otherwise SQLite v4 consent columns survive the downgrade fixture,
         # and the legitimate v3->v4 migration refuses to add duplicates.
+        db.execute("DROP TABLE message_knowledge_evidence")
         db.execute("DROP INDEX idx_cognitive_confirmation_ref")
         for name in (
             "confirmation_ref",
@@ -139,7 +141,7 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
     assert reopened.get(op_id)["status"] == "prepared"
     assert reopened.claim(op_id)["payload"] == payload
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 def test_legacy_journal_does_not_invent_authorization(tmp_path):
@@ -230,6 +232,7 @@ def test_existing_v3_database_migrates_to_v4_without_faking_human_consent(tmp_pa
     memory_id = str(uuid4())
     journal.resolve(op_id, status="confirmed", memory_id=memory_id)
     with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE message_knowledge_evidence")
         db.execute("DROP INDEX idx_cognitive_confirmation_ref")
         for name in (
             "confirmation_ref",
@@ -249,7 +252,7 @@ def test_existing_v3_database_migrates_to_v4_without_faking_human_consent(tmp_pa
     assert operation["confirmation_conversation_id"] is None
     assert operation["confirmed_by_user_at"] is None
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
         columns = {row[1] for row in db.execute(
             "PRAGMA table_info(cognitive_write_operations)"
         )}
