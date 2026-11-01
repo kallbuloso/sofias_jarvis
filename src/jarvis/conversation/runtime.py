@@ -17,9 +17,10 @@ class ConversationRuntime:
         self.store = store
         self.provider = provider
         self.last_assistant_message_id: str | None = None
+        self.last_user_message_id: str | None = None
 
     def reply(self, *, conversation_id: str, text: str, model: str) -> Iterator[str]:
-        self.store.append_user_message(conversation_id, text)
+        self.last_user_message_id = self.store.append_user_message(conversation_id, text)
         context = self.store.completed_context(conversation_id)
         message_id = self.store.begin_assistant_message(conversation_id)
         self.last_assistant_message_id = message_id
