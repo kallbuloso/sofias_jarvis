@@ -35,7 +35,8 @@ class ReplyWorker(QObject):
 
     def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
                  memory_scope: str | None = None,
-                 knowledge_dataset: str | None = None):
+                 knowledge_dataset: str | None = None,
+                 conversational: bool = False):
         super().__init__()
         self.conversation_id = conversation_id
         self.prompt = prompt
@@ -43,6 +44,8 @@ class ReplyWorker(QObject):
         self.api_key = api_key
         self.memory_scope = memory_scope
         self.knowledge_dataset = knowledge_dataset
+        self.conversational = conversational
+        self.routing_status = "NOT_REQUESTED"
         self.cancelled = threading.Event()
 
     @Slot()
@@ -61,8 +64,46 @@ class ReplyWorker(QObject):
 
             client = OpenAI(api_key=self.api_key, timeout=30.0)
             from jarvis.conversation.grounding import GroundedTextProvider
+            from jarvis.conversation.intent import TextIntentRouter
+            prepared_answer = None
+            if self.conversational:
+                try:
+                    intent = TextIntentRouter(client).classify(
+                        model=self.model, utterance=self.prompt,
+                    )
+                    self.routing_status = "CLASSIFIED"
+                    if intent.action == "memory_recall":
+                        self.memory_scope = intent.scope or "global"
+                    elif intent.action == "knowledge_query":
+                        self.knowledge_dataset = "jarvis-knowledge"
+                    elif intent.action == "reminder_request":
+                        prepared_answer = (
+                            "Entendi que você quer um lembrete agendado. "
+                            "O scheduler e as notificações ainda não estão disponíveis "
+                            "nesta versão. Não agendei nenhum lembrete."
+                        )
+                    elif intent.action in {
+                        "memory_create", "memory_update", "memory_forget",
+                    }:
+                        prepared_answer = (
+                            "Entendi seu pedido sobre a memória cognitiva. "
+                            "A etapa de confirmação por linguagem natural ainda "
+                            "está sendo conectada. Nenhuma memória foi alterada."
+                        )
+                except Exception as exc:
+                    self.routing_status = "UNAVAILABLE"
+                    trace("conversational_router_unavailable",
+                          error_class=type(exc).__name__)
+                    # Safest degradation: ordinary read-only chat, never mutation.
+                    # The grounding policy below forbids claiming effects.
 
-            provider = GroundedTextProvider(OpenAIResponsesAdapter(client))
+            if prepared_answer is not None:
+                class StaticAnswer:
+                    def stream_text(self, *, model, messages):
+                        yield prepared_answer
+                provider = StaticAnswer()
+            else:
+                provider = GroundedTextProvider(OpenAIResponsesAdapter(client))
 
             if self.memory_scope is not None:
                 from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
@@ -360,6 +401,16 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": "unknown_conversation"})
 
     @Slot(str, str, str, result=str)
+    def sendConversationalMessage(
+        self, conversation_id: str, prompt: str, model: str,
+    ) -> str:
+        """Single natural-language entry. The classifier never authorizes writes."""
+        return self._dispatch(
+            conversation_id, prompt, model, memory_scope=None,
+            knowledge_dataset=None, conversational=True,
+        )
+
+    @Slot(str, str, str, result=str)
     def sendMessage(self, conversation_id: str, prompt: str, model: str) -> str:
         """Original TB-01 text-only path. No memory access."""
         return self._dispatch(conversation_id, prompt, model, memory_scope=None,
@@ -555,6 +606,7 @@ class JarvisBridge(QObject):
         self, conversation_id: str, prompt: str, model: str, *,
         memory_scope: str | None,
         knowledge_dataset: str | None,
+        conversational: bool = False,
     ) -> str:
         trace("bridge_dispatch_requested", worker_active=self.active,
               memory=memory_scope is not None, knowledge=knowledge_dataset is not None)
@@ -575,6 +627,7 @@ class JarvisBridge(QObject):
             conversation_id, prompt.strip(), model.strip(), key,
             memory_scope=memory_scope,
             knowledge_dataset=knowledge_dataset,
+            conversational=conversational,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -630,6 +683,9 @@ class JarvisBridge(QObject):
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
             "memoryStatus": memory_status,
+            "routingStatus": (
+                self._worker.routing_status if self._worker is not None else "NOT_REQUESTED"
+            ),
         }))
 
     @Slot()
