@@ -241,9 +241,16 @@ def main() -> int:
             if input(f"Digite exatamente {authorization} para autorizar: ").strip() != authorization:
                 print(json.dumps({"status": "CANCELLED"}))
                 return 0
+            from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+            confirmation = PersonalMutationAuthorization.from_typed_confirmation(
+                action=action, target_memory_id=preview["memory_id"],
+                phrase=authorization, method="cli_typed",
+            )
             # The service verifies the remote preview a second time before any mutation.
-            result = (lifecycle.supersede(preview, new_content=new_content)
-                      if action == "supersede" else lifecycle.forget(preview))
+            result = (lifecycle.supersede(preview, new_content=new_content,
+                                          confirmation=confirmation)
+                      if action == "supersede" else lifecycle.forget(
+                          preview, confirmation=confirmation))
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "CONFIRMED" else 2
 
@@ -367,6 +374,11 @@ def main() -> int:
                 print(json.dumps({"status": "CANCELLED"}))
                 return 0
 
+            from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+            confirmation = PersonalMutationAuthorization.from_typed_confirmation(
+                action="create", target_memory_id=None, phrase="GRAVAR",
+                method="cli_typed",
+            )
             operation_id = str(uuid4())
             provenance = {
                 "origin_kind": "user_asserted",
@@ -381,7 +393,7 @@ def main() -> int:
                 "idempotency_key": operation_id,
             }
             journal = MemoryOperationJournal(database_path())
-            journal.prepare(operation_id, url, payload)
+            journal.prepare(operation_id, url, payload, confirmation=confirmation)
             journal.claim(operation_id)
             try:
                 saved = client.create(
