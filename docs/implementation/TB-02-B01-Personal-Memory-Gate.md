@@ -126,3 +126,62 @@ usando `/atualizar UUID | texto` e `/esquecer UUID` com a única
 ação `Fechar sem alterar`, sem mutação real; observar saída Qt
 e logs opcionais. Não considerar B-01b Product Done antes desse teste.
 Nenhuma alteração de memória real foi relatada nesta validação.
+
+## Human verification of B-01b and B-01c implementation (2026-11-01)
+
+The owner confirmed both read-only desktop previews worked without errors,
+and `--memory-get ab89ac04-7134-49c6-9fa2-2880a296d50a`
+returned identical before/after values: `global`, `profile`,
+`content="Para interfaces gráficas, prefiro a cor teal."`,
+`lifecycle=active`. This completes the B-01b visual preview checkpoint.
+
+B-01c (implementation awaiting Windows test) introduces:
+- `PersonalMutationGate` with random one-use token, 180-second TTL,
+  exact `SUBSTITUIR UUID` or `ESQUECER UUID`, single-use consumption
+  and conversation-bound confirmation.
+- The new `previewPersonalMutation` bridge method: validates canonical
+  UUID, selected conversation, replacement length and credential-like
+  content, and fetches an owner-verified remote preview.
+- The existing read-only `previewPersonalMemory` bridge path remains
+  for backwards compatibility and cannot authorize a mutation.
+- A second, explicit confirmation text field in the desktop and a
+  distinct `Confirmar substituição` or `Confirmar esquecimento` button.
+  Closing cancels the pending token and preserves the original memory.
+- The one-use intent is consumed **before** starting the mutation
+  worker. A remote state/provenance recheck and journal/idempotency
+  still occur before the external request. Results cannot be retried
+  automatically after ambiguity.
+- The mutation runs on a separate Qt thread; its final status is
+  delivered on the GUI thread. Application shutdown waits for active
+  workers. Active mutation cannot be cancelled by closing the preview.
+- No model-generated text or Knowledge Retrieval result has an execution
+  tool for personal memory operations.
+
+### Mandatory first validation (no real writes)
+
+```powershell
+git pull --ff-only origin feat/tb-02-memory-knowledge
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+.\.venv\Scripts\python.exe -m pytest -q
+cd frontend
+npm run build
+cd ..
+```
+
+The last validated suite was **189 passed in 6.01s**. Five new test
+functions (three token gate tests and two desktop confirmation tests)
+were added, so the expected collection is **194 passed**, subject to
+actual Windows testing. No rebuild-free runtime guarantee is asserted.
+
+**Do not confirm an operation on the existing teal memory**, even if
+the new button is available. Do not run destructive tests against the
+already ingested ADR or the earlier discarded lab memories.
+
+The next safe smoke is a **cancellation-only** check: use a personal
+memory preview, leave the confirmation text empty, click
+`Fechar sem alterar`, verify the remote record remains active.
+After that, any real mutation smoke must use a NEW explicitly
+authorized, disposable personal test memory; use the same owner
+checks, real operation IDs and independent remote verification.
+
+**TB-02/B-01c is NOT accepted yet. B-02 remains pending.**
