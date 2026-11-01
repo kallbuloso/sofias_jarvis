@@ -5,11 +5,46 @@ mutation until a second, exact typed authorization is validated.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from secrets import token_urlsafe
 from time import monotonic
 from typing import Callable
-from uuid import UUID
+from uuid import UUID, uuid4
+
+
+@dataclass(frozen=True)
+class PersonalMutationAuthorization:
+    """Local evidence of verified typed consent; never contains the phrase/token."""
+    authorization_id: str
+    action: str
+    target_memory_id: str | None
+    method: str
+    conversation_id: str | None
+
+    @classmethod
+    def from_typed_confirmation(cls, *, action: str, target_memory_id: str | None,
+                                phrase: str, method: str,
+                                conversation_id: str | None = None):
+        if method not in {"cli_typed", "desktop_typed"}:
+            raise ValueError("invalid_confirmation_method")
+        if action not in {"create", "supersede", "forget"}:
+            raise ValueError("invalid_confirmation_action")
+        if method == "desktop_typed":
+            if action == "create" or conversation_id is None:
+                raise ValueError("invalid_desktop_confirmation_context")
+            conversation_id = str(UUID(conversation_id))
+        elif conversation_id is not None:
+            raise ValueError("unexpected_cli_confirmation_context")
+        if action == "create":
+            if target_memory_id is not None or phrase != "GRAVAR":
+                raise ValueError("invalid_create_confirmation")
+            target = None
+        else:
+            target = str(UUID(target_memory_id))
+            expected = ("SUBSTITUIR " if action == "supersede" else "ESQUECER ") + target
+            if phrase != expected:
+                raise ValueError("confirmation_phrase_mismatch")
+        return cls(str(uuid4()), action, target, method, conversation_id)
 
 
 @dataclass(frozen=True)
@@ -19,6 +54,7 @@ class PendingPersonalMutation:
     replacement: str
     conversation_id: str
     expires_at: float
+    authorization: PersonalMutationAuthorization | None = None
 
 
 class PersonalMutationGate:
@@ -79,4 +115,9 @@ class PersonalMutationGate:
                     else "ESQUECER ") + target
         if phrase != required:
             raise ValueError("authorization_phrase_mismatch")
-        return pending
+        consent = PersonalMutationAuthorization.from_typed_confirmation(
+            action=pending.action, target_memory_id=target,
+            phrase=phrase, method="desktop_typed",
+            conversation_id=pending.conversation_id,
+        )
+        return replace(pending, authorization=consent)
