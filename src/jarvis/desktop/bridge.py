@@ -34,6 +34,7 @@ class ReplyWorker(QObject):
     done = Signal(str, str, str, str)
     knowledgeDone = Signal(str, str)
     createProposed = Signal(str, str)
+    mutationProposed = Signal(str, str)
 
     def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
                  memory_scope: str | None = None,
@@ -49,6 +50,7 @@ class ReplyWorker(QObject):
         self.conversational = conversational
         self.routing_status = "NOT_REQUESTED"
         self.create_proposal: dict | None = None
+        self.mutation_proposal: dict | None = None
         self.direct_create = None
         self.cancelled = threading.Event()
 
@@ -114,11 +116,75 @@ class ReplyWorker(QObject):
                             "nesta versão. Não agendei nenhum lembrete."
                         )
                     elif intent.action in {"memory_update", "memory_forget"}:
-                        prepared_answer = (
-                            "Entendi seu pedido sobre a memória cognitiva. "
-                            "A etapa de confirmação por linguagem natural ainda "
-                            "está sendo conectada. Nenhuma memória foi alterada."
-                        )
+                        try:
+                            from jarvis.memory.cognitive import CognitiveMemoryClient
+                            from jarvis.memory.connection import configured_memory_url
+                            from jarvis.memory.journal import MemoryOperationJournal
+                            from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+                            memory_url = configured_memory_url()
+                            memory_key = (
+                                WindowsCredentialStore().get_memory_key()
+                                if memory_url else None
+                            )
+                            if not memory_url or not memory_key:
+                                raise ValueError("memory_not_configured")
+                            reader = CognitiveMemoryClient(memory_url, memory_key)
+                            lifecycle = PersonalMemoryLifecycle(
+                                reader, MemoryOperationJournal(database_path()), memory_url,
+                            )
+                            action = (
+                                "supersede" if intent.action == "memory_update"
+                                else "forget"
+                            )
+                            scopes = (
+                                [intent.scope] if intent.scope
+                                else ["global", "project:jarvis"]
+                            )
+                            preview = lifecycle.resolve_preview(
+                                self.prompt, action=action, scopes=scopes,
+                            )
+                            replacement = intent.content if action == "supersede" else ""
+                            if (action == "supersede"
+                                    and (not isinstance(replacement, str)
+                                         or not replacement.strip()
+                                         or looks_like_credential(replacement))):
+                                raise ValueError("invalid_or_sensitive_replacement")
+                            self.mutation_proposal = {
+                                "action": action,
+                                "memory_id": preview["memory_id"],
+                                "replacement": replacement or "",
+                            }
+                            prepared_answer = (
+                                "Encontrei uma memória correspondente. "
+                                "Revise a prévia antes de confirmar a alteração."
+                            )
+                        except ValueError as exc:
+                            reason = str(exc)
+                            if reason == "memory_target_ambiguous":
+                                prepared_answer = (
+                                    "Encontrei mais de uma memória possível. "
+                                    "Especifique melhor qual informação você quer "
+                                    "alterar ou esquecer. Nenhuma memória foi modificada."
+                                )
+                            elif reason == "memory_target_not_found":
+                                prepared_answer = (
+                                    "Não encontrei uma memória ativa e pertencente "
+                                    "a esta instalação que corresponda ao pedido. "
+                                    "Nenhuma memória foi modificada."
+                                )
+                            else:
+                                prepared_answer = (
+                                    "Não consegui preparar essa alteração com segurança. "
+                                    "Nenhuma memória foi modificada."
+                                )
+                        except Exception as exc:
+                            trace("natural_memory_target_resolution_failed",
+                                  error_class=type(exc).__name__)
+                            prepared_answer = (
+                                "O Sofias Memory não está disponível para resolver "
+                                "essa alteração agora. Nenhuma memória foi modificada."
+                            )
                 except Exception as exc:
                     self.routing_status = "UNAVAILABLE"
                     trace("conversational_router_unavailable",
@@ -332,6 +398,10 @@ class ReplyWorker(QObject):
                 self.createProposed.emit(
                     self.conversation_id, _json(self.create_proposal),
                 )
+            if result == "completed" and self.mutation_proposal is not None:
+                self.mutationProposed.emit(
+                    self.conversation_id, _json(self.mutation_proposal),
+                )
             self.done.emit(self.conversation_id, result, error_code, memory_status)
 
 class MemoryPreviewWorker(QObject):
@@ -339,12 +409,16 @@ class MemoryPreviewWorker(QObject):
     finishedPreview = Signal(str)
 
     def __init__(self, action: str, memory_id: str, *,
-                 replacement: str = "", conversation_id: str | None = None):
+                 replacement: str = "", conversation_id: str | None = None,
+                 approval_mode: str = "typed"):
         super().__init__()
+        if approval_mode not in {"typed", "click"}:
+            raise ValueError("invalid_approval_mode")
         self.action = action
         self.memory_id = memory_id
         self.replacement = replacement
         self.conversation_id = conversation_id
+        self.approval_mode = approval_mode
         self.full_preview: dict | None = None
 
     @Slot()
@@ -527,6 +601,7 @@ class JarvisBridge(QObject):
         from jarvis.memory.personal_confirmation import PersonalCreateGate
         self._create_gate = PersonalCreateGate()
         self._deferred_create_proposal: dict | None = None
+        self._deferred_mutation_proposal: dict | None = None
         self._mutation_thread: QThread | None = None
         self._mutation_worker: MemoryMutationWorker | None = None
 
@@ -728,6 +803,29 @@ class JarvisBridge(QObject):
         thread.start()
         return _json({"ok": True, "status": "MUTATION_REQUESTED"})
 
+    @Slot(str, str, result=str)
+    def approvePersonalMutation(self, token: str, conversation_id: str) -> str:
+        """Approve one natural-language mutation after its exact target preview."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            pending = self._mutation_gate.approve(token, conversation_id)
+        except (ValueError, KeyError, TypeError):
+            return _json({"ok": False, "error": "authorization_invalid_or_expired"})
+        worker = MemoryMutationWorker(pending)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._mutation_worker = worker
+        self._mutation_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedMutation.connect(self._on_memory_mutation)
+        worker.finishedMutation.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_mutation_thread_finished)
+        trace("personal_mutation_thread_starting", action=pending.action)
+        thread.start()
+        return _json({"ok": True, "status": "MUTATION_REQUESTED"})
+
     @Slot(str, str, str, result=str)
     def confirmConversationalCreate(self, token: str, conversation_id: str,
                                     scope: str) -> str:
@@ -805,9 +903,14 @@ class JarvisBridge(QObject):
                     worker.action, worker.full_preview, worker.replacement,
                     worker.conversation_id,
                 )
-                data.update({"authorizationToken": token,
-                             "requiredPhrase": phrase,
-                             "conversationId": worker.conversation_id})
+                data.update({
+                    "authorizationToken": token,
+                    "requiredPhrase": (
+                        phrase if worker.approval_mode == "typed" else None
+                    ),
+                    "approvalMode": worker.approval_mode,
+                    "conversationId": worker.conversation_id,
+                })
             except (ValueError, KeyError, TypeError):
                 self._mutation_gate.clear()
                 data = {"ok": False, "error": "preview_authorization_invalid"}
@@ -838,6 +941,7 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": "busy"})
         self._create_gate.clear()
         self._deferred_create_proposal = None
+        self._deferred_mutation_proposal = None
         if not model.strip() or not prompt.strip():
             return _json({"ok": False, "error": "missing_text_or_model"})
         if self._store.get_conversation(conversation_id) is None:
@@ -865,6 +969,7 @@ class JarvisBridge(QObject):
         worker.done.connect(self._on_done)
         worker.knowledgeDone.connect(self._on_knowledge_done)
         worker.createProposed.connect(self._on_conversational_create_proposed)
+        worker.mutationProposed.connect(self._on_conversational_mutation_proposed)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(self._on_thread_finished)
