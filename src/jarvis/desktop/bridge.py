@@ -32,6 +32,7 @@ class ReplyWorker(QObject):
     delta = Signal(str, str)
     done = Signal(str, str, str, str)
     knowledgeDone = Signal(str, str)
+    createProposed = Signal(str, str)
 
     def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
                  memory_scope: str | None = None,
@@ -229,6 +230,10 @@ class ReplyWorker(QObject):
             trace("reply_worker_end", result=result, error_class=error_code,
                   memory_status=memory_status,
                   knowledge=self.knowledge_dataset is not None)
+            if result == "completed" and self.create_proposal is not None:
+                self.createProposed.emit(
+                    self.conversation_id, _json(self.create_proposal),
+                )
             self.done.emit(self.conversation_id, result, error_code, memory_status)
 
 class MemoryPreviewWorker(QObject):
@@ -759,6 +764,7 @@ class JarvisBridge(QObject):
         worker.delta.connect(self._on_delta)
         worker.done.connect(self._on_done)
         worker.knowledgeDone.connect(self._on_knowledge_done)
+        worker.createProposed.connect(self._on_conversational_create_proposed)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(self._on_thread_finished)
@@ -796,13 +802,41 @@ class JarvisBridge(QObject):
             "evidencePersistence": data.get("evidencePersistence", "NOT_SAVED"),
         }))
 
+    @Slot(str, str)
+    def _on_conversational_create_proposed(
+        self, conversation_id: str, raw_proposal: str,
+    ) -> None:
+        if self._closing or self._store.get_conversation(conversation_id) is None:
+            self._create_gate.clear()
+            return
+        try:
+            proposal = json.loads(raw_proposal)
+            if not isinstance(proposal, dict) or set(proposal) != {"content", "scope"}:
+                raise ValueError("invalid_create_proposal")
+            token = self._create_gate.offer(
+                content=proposal["content"],
+                scope=proposal["scope"],
+                conversation_id=conversation_id,
+            )
+            payload = {
+                "type": "create_proposal", "ok": True,
+                "conversationId": conversation_id,
+                "content": proposal["content"], "scope": proposal["scope"],
+                "authorizationToken": token,
+            }
+        except (ValueError, KeyError, TypeError):
+            self._create_gate.clear()
+            payload = {
+                "type": "create_proposal", "ok": False,
+                "conversationId": conversation_id,
+                "error": "invalid_or_sensitive_create_proposal",
+            }
+        self.streamEvent.emit(_json(payload))
+
     @Slot(str, str, str, str)
     def _on_done(self, conversation_id: str, result: str, error_code: str,
                  memory_status: str) -> None:
         trace("bridge_worker_done_received", result=result, error_class=error_code)
-        proposal = (
-            self._worker.create_proposal if self._worker is not None else None
-        )
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
@@ -811,26 +845,6 @@ class JarvisBridge(QObject):
                 self._worker.routing_status if self._worker is not None else "NOT_REQUESTED"
             ),
         }))
-        if result == "completed" and proposal is not None:
-            try:
-                token = self._create_gate.offer(
-                    content=proposal["content"],
-                    scope=proposal["scope"],
-                    conversation_id=conversation_id,
-                )
-                self.streamEvent.emit(_json({
-                    "type": "create_proposal", "ok": True,
-                    "conversationId": conversation_id,
-                    "content": proposal["content"], "scope": proposal["scope"],
-                    "authorizationToken": token,
-                }))
-            except (ValueError, KeyError, TypeError):
-                self._create_gate.clear()
-                self.streamEvent.emit(_json({
-                    "type": "create_proposal", "ok": False,
-                    "conversationId": conversation_id,
-                    "error": "invalid_or_sensitive_create_proposal",
-                }))
 
 
     @Slot()
