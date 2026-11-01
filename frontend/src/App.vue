@@ -9,6 +9,8 @@ const model = ref('')
 const draft = ref('')
 const busy = ref(false)
 const warning = ref('')
+const deletionTarget = ref(null)
+const deletionBusy = ref(false)
 const credentialConfigured = ref(false)
 const memoryConfigured = ref(false)
 const useMemory = ref(false)
@@ -97,6 +99,41 @@ async function openConversation(id, preserveNotices = false) {
       knowledgeNotice.value = ''
             }
     await scrollToBottom()
+  }
+}
+
+function requestDeleteConversation(conversation) {
+  if (busy.value || memoryPreviewBusy.value || memoryMutationBusy.value ||
+      deletionBusy.value) return
+  deletionTarget.value = conversation
+}
+
+async function confirmDeleteConversation() {
+  const target = deletionTarget.value
+  if (!target || deletionBusy.value || busy.value ||
+      memoryPreviewBusy.value || memoryMutationBusy.value) return
+  deletionBusy.value = true
+  try {
+    const result = await call('deleteConversation', target.id)
+    if (!result.ok) {
+      warning.value = 'Não foi possível excluir a conversa: ' + (result.error || 'unknown')
+      return
+    }
+    deletionTarget.value = null
+    await refreshConversations()
+    if (selected.value === target.id) {
+      if (conversations.value.length) {
+        await openConversation(conversations.value[0].id)
+      } else {
+        selected.value = ''
+        messages.value = []
+        await createConversation()
+      }
+    }
+  } catch {
+    warning.value = 'Falha ao excluir a conversa. Verifique o histórico antes de repetir.'
+  } finally {
+    deletionBusy.value = false
   }
 }
 
@@ -357,7 +394,16 @@ onMounted(async () => {
         <v-list density="compact" nav>
           <v-list-item v-for="c in conversations" :key="c.id"
             :active="selected === c.id" :title="c.title"
-            @click="openConversation(c.id)"/>
+            @click="openConversation(c.id)">
+            <template #append>
+              <v-btn size="x-small" variant="text" color="error"
+                aria-label="Excluir conversa" title="Excluir esta conversa"
+                :disabled="busy || memoryPreviewBusy || memoryMutationBusy || deletionBusy"
+                @click.stop="requestDeleteConversation(c)">
+                Excluir
+              </v-btn>
+            </template>
+          </v-list-item>
         </v-list>
         <div class="sidebar-footer">Operação local · Windows</div>
       </v-navigation-drawer>
@@ -480,6 +526,23 @@ onMounted(async () => {
         </div>
       </v-main>
     </v-layout>
+    <v-dialog :model-value="Boolean(deletionTarget)" max-width="480" persistent>
+      <v-card title="Excluir conversa?">
+        <v-card-text>
+          Esta ação excluirá permanentemente as mensagens e referências
+          documentais desta conversa no histórico local.
+          <strong>Não apagará memórias cognitivas do Sofias Memory</strong>
+          nem os registros de auditoria das operações.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletionBusy"
+            @click="deletionTarget = null">Cancelar</v-btn>
+          <v-btn color="error" :loading="deletionBusy" :disabled="deletionBusy"
+            @click="confirmDeleteConversation">Excluir conversa</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
     <v-dialog v-model="memoryPreviewDialog" max-width="700" persistent>
       <v-card v-if="memoryPreview" title="Confirmação supervisionada da memória">
         <v-card-text>
