@@ -203,3 +203,21 @@ The next human test opens the existing teal record using the explicit
 but clicks only `Fechar sem alterar` each time. A subsequent
 `--memory-get` must still report `lifecycle=active` and unchanged teal
 content. **Do not type the confirmation phrase or click the confirm button.**
+
+## B-01c — cancel-only desktop smoke accepted by owner (2026-11-01)
+
+Owner confirmed that **both** the supervised update preview and
+supervised forget preview opened and were explicitly closed with
+`Fechar sem alterar`. A subsequent real `--memory-get` for the
+original personal record `ab89ac04-7134-49c6-9fa2-2880a296d50a`
+returned `FOUND`, `lifecycle=active`, original teal text,
+`superseded_by=null`, `forgotten_at=null`. No desktop errors reported.
+
+**Verdict:** cancel-only human smoke = **PASS**. This validates
+non-mutating closure, not remote successful mutation or every possible
+timeout/replay path. The next B-01c checkpoint is an explicitly approved
+fresh disposable personal `project:jarvis/semantic` Create. Owner
+performs this CLI Create with its own GRAVAR confirmation; then
+Supersede/Forget are tested in separate steps against that new
+lab-owned UUID only. No model-triggered writes, no mutation of
+the preserved teal memory. B-02 remains queued.
