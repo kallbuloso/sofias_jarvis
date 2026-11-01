@@ -502,3 +502,34 @@ scope resolution, user-friendly approval bound to one operation, durable
 audit and real ACK**; no typed UUIDs, no side effect from model output
 alone. Scheduling remains a different product capability.
 See `docs/implementation/TB-02-Conversational-Text-Increment-1.md`.
+
+## 20. TB-02 — Text-first desktop accepted; supervised natural Create pending Windows tests
+
+Owner supplied a desktop screenshot and explicitly confirmed all four
+requested text-entry/deletion checks. Screenshot shows automatic
+Cognitive Recall of the genuine teal preference; truthful recognition
+of a next-day reminder without a scheduler; natural Create intent
+recognition with no unauthorized write; deletion affordances and absence
+of Memory/Knowledge switches. Owner confirmed the Knowledge and
+conversation deletion checks as well. This closes **Text Increment 1,
+human acceptance PASS**, following prior Windows `235 passed` and
+Vite build success.
+
+The next feature-branch increment has been implemented, **not yet
+executed/accepted on Windows**: user-readable natural Create preview,
+clarification between general vs project-JARVIS scope when ambiguous,
+one-click cancel/approval without slash grammar/UUID, 180-second
+single-use conversation-bound token, `desktop_approved` local journal
+receipt, idempotent remote Create and verified ACK, and post-ACK
+content-free assistant confirmation persisted in the local transcript.
+A dedicated Qt signal defers the preview until reply thread cleanup.
+Offline tests added (expected 245 total; not verified by owner).
+
+First human smoke MUST be **cancel-only** with a fresh disposable
+request. A real service mutation requires separate explicit owner
+approval after tests and cancellation smoke. Existing global teal
+preference must never be mutated. No general natural Update/Forget,
+scheduler, voice, unapproved dataset discovery, `main` merge, or
+TB-03 work has been enabled.
+
+See `docs/implementation/TB-02-Conversational-Create-Increment-2.md`.
