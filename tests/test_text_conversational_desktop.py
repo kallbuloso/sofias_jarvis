@@ -300,3 +300,49 @@ def test_direct_create_remote_result_unknown_does_not_claim_saved(tmp_path, monk
             "SELECT status FROM cognitive_write_operations"
         ).fetchone()[0]
     assert status == "unknown"
+
+
+def test_direct_create_missing_connection_never_prepares_journal(tmp_path, monkeypatch):
+    from jarvis.memory.journal import MemoryOperationJournal
+    environment(monkeypatch, tmp_path, "memory_create")
+    monkeypatch.setattr(connection, "configured_memory_url", lambda: None)
+    db = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = db.create_conversation()
+    worker = ReplyWorker(
+        cid, "JARVIS, lembre que no projeto JARVIS o teste usa azul.",
+        "model", "PRIVATE", conversational=True,
+    )
+    worker.run()
+    assert "não está configurado" in db.list_messages(cid)[-1]["content"]
+    with MemoryOperationJournal(db.path)._store._connection() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM cognitive_write_operations"
+        ).fetchone()[0] == 0
+
+
+def test_direct_create_disagrees_with_model_scope_never_executes(tmp_path, monkeypatch):
+    calls, memory_calls, knowledge_calls = environment(
+        monkeypatch, tmp_path, "memory_create",
+    )
+    class WrongScopeResponses:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(output_text=json.dumps({
+                "action": "memory_create", "scope": "global",
+                "content": "qualquer outro conteúdo sugerido pela IA",
+            }))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(
+        OpenAI=lambda **kw: SimpleNamespace(responses=WrongScopeResponses()),
+    ))
+    db = SQLiteConversationStore(tmp_path / "jarvis.sqlite3")
+    cid = db.create_conversation()
+    worker = ReplyWorker(
+        cid, "JARVIS, lembre que no projeto JARVIS usamos Vuetify 3.",
+        "model", "PRIVATE", conversational=True,
+    )
+    worker.run()
+    assert "Não consegui determinar um escopo consistente" in (
+        db.list_messages(cid)[-1]["content"]
+    )
+    assert worker.direct_create is None
+    assert not memory_calls and not knowledge_calls
