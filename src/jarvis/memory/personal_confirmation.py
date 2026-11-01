@@ -22,6 +22,14 @@ class PersonalMutationAuthorization:
     conversation_id: str | None
 
     @classmethod
+    def from_desktop_approval(cls, *, action: str, conversation_id: str):
+        """Recorded single-click approval for a bounded, previously previewed Create."""
+        if action != "create":
+            raise ValueError("desktop_approval_create_only")
+        return cls(str(uuid4()), "create", None, "desktop_approved",
+                   str(UUID(conversation_id)))
+
+    @classmethod
     def from_typed_confirmation(cls, *, action: str, target_memory_id: str | None,
                                 phrase: str, method: str,
                                 conversation_id: str | None = None):
@@ -121,3 +129,67 @@ class PersonalMutationGate:
             conversation_id=pending.conversation_id,
         )
         return replace(pending, authorization=consent)
+
+
+@dataclass(frozen=True)
+class PendingPersonalCreate:
+    content: str
+    scope: str
+    conversation_id: str
+    expires_at: float
+    authorization: PersonalMutationAuthorization
+
+
+class PersonalCreateGate:
+    """Single use, conversation-scoped, time-limited approval for a previewed Create."""
+
+    def __init__(self, *, ttl_seconds: int = 180,
+                 now: Callable[[], float] = monotonic):
+        if not 1 <= ttl_seconds <= 900:
+            raise ValueError("invalid_create_ttl")
+        self._ttl = ttl_seconds
+        self._now = now
+        self._token: str | None = None
+        self._pending: tuple[str, str | None, str, float] | None = None
+
+    def clear(self) -> None:
+        self._token = None
+        self._pending = None
+
+    def offer(self, *, content: str, scope: str | None,
+              conversation_id: str) -> str:
+        self.clear()
+        from jarvis.memory.sensitive import looks_like_credential
+        if (not isinstance(content, str) or not 1 <= len(content.strip()) <= 16384
+                or looks_like_credential(content)):
+            raise ValueError("invalid_or_sensitive_create_content")
+        if scope is not None and scope not in {"global", "project:jarvis"}:
+            raise ValueError("invalid_create_scope")
+        conversation_id = str(UUID(conversation_id))
+        self._token = token_urlsafe(32)
+        self._pending = (content.strip(), scope, conversation_id,
+                         self._now() + self._ttl)
+        return self._token
+
+    def consume(self, token: str, conversation_id: str,
+                scope: str) -> PendingPersonalCreate:
+        pending, expected = self._pending, self._token
+        # Every attempt consumes the offer; never permit replay.
+        self.clear()
+        if (pending is None or not isinstance(token, str)
+                or token != expected):
+            raise ValueError("create_approval_missing")
+        content, proposed_scope, owner_conversation, expiry = pending
+        if self._now() > expiry:
+            raise ValueError("create_approval_expired")
+        if str(UUID(conversation_id)) != owner_conversation:
+            raise ValueError("create_approval_wrong_conversation")
+        if (scope not in {"global", "project:jarvis"}
+                or (proposed_scope is not None and proposed_scope != scope)):
+            raise ValueError("create_approval_wrong_scope")
+        receipt = PersonalMutationAuthorization.from_desktop_approval(
+            action="create", conversation_id=owner_conversation,
+        )
+        return PendingPersonalCreate(
+            content, scope, owner_conversation, expiry, receipt,
+        )
