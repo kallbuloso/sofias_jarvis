@@ -95,3 +95,43 @@ Owner provided real local Windows outputs after updating the feature branch:
 **Verdict:** B-02a automated tests and build **PASS**. Running pytest on temporary fixtures does not itself prove the operational SQLite v4→v5 transition or visual source attribution. Both remain pending desktop smoke.
 
 Human smoke pending: open desktop (will invoke live SQLite migration; backup already exists), enable `Consultar Knowledge` with the currently approved `jarvis-knowledge` dataset, ask a non-sensitive question about ADR-0001, verify source metadata attached to the exact assistant message, switch conversations and return, shut down/relaunch desktop, verify unchanged source/document/chunk IDs on the same message and `completed` status. Do not create, supersede or forget any Cognitive Memory records. If retrieval returns `NO_RESULTS`, `UNAVAILABLE`, or persistence failure, record that result rather than claim verified sources. B-02 and TB-02 Product Done are **not yet accepted**.
+
+## B-02a — Human desktop provenance smoke: PASS (2026-11-01)
+
+Owner supplied a screenshot and separately confirmed each acceptance
+checkpoint against the real Windows desktop:
+
+- With **Consultar Sofias Memory OFF** and **Consultar Knowledge ON**
+  for the authorized `jarvis-knowledge` dataset, sent the prompt:
+  "Com base no ADR-0001, qual arquitetura foi aprovada para o JARVIS?
+  Identifique a fonte documental utilizada."
+- The assistant answered Modular Monolith with Ports & Adapters.
+  A dedicated panel **inside the assistant message** displayed
+  `Consulta Knowledge: RESULTS_FOUND`,
+  **Fontes documentais verificadas (1)**, dataset `jarvis-knowledge`,
+  a query UUID, retrieval timestamp, document/source/chunk UUIDs
+  and source title `JARVIS ADR-0001 — Modular Monolith`.
+- Screenshot evidence verifies that this is **structured retrieval
+  metadata in the message**, not only IDs inserted into LLM prose.
+- Owner confirmed the reference **remained on that same message**
+  after switching conversations and coming back.
+- Owner confirmed the reference **remained after closing and
+  restarting JARVIS**; the application shut down normally.
+- Earlier same-version Windows evidence: `214 passed in 8.38s`,
+  Vite v7.3.7 build `559 modules`, completed in `5.23s`.
+  The production SQLite pre-v5 backup is
+  `jarvis-pre-v5-20261101-113703.sqlite3`.
+
+**B-02a acceptance = PASS** (automated + human desktop switch/restart
+and shutdown smoke). No fresh Cognitive Memory mutations were requested.
+
+**Product Done distinction:** B-02a passing does not automatically
+mean every broader PRD-02/SPEC-04 acceptance criterion is demonstrated.
+Final review must distinguish this provenance persistence checkpoint
+from end-to-end conversational Create and degraded-service behavior;
+formal owner Product Done and main merge remain separate gates.
+
+**Minor cosmetic observation, not B-02a blocking:** response prose still
+displays some Markdown tokens literally; the structured verified-source
+panel itself remains readable. Do not use unrestricted HTML rendering
+to fix it.
