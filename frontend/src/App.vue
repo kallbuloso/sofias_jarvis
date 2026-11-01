@@ -20,6 +20,7 @@ const memoryPreviewReplacement = ref('')
 const memoryAuthorizationToken = ref('')
 const memoryRequiredPhrase = ref('')
 const memoryAuthorizationInput = ref('')
+const memoryApprovalMode = ref('typed')
 const memoryMutationBusy = ref(false)
 const createProposal = ref(null)
 const createScope = ref('')
@@ -161,17 +162,20 @@ function handleStream(raw) {
   }
   if (event.type === 'memory_preview') {
     memoryPreviewBusy.value = false
+    const clickApproval = event.approvalMode === 'click'
     if (event.ok && event.preview && typeof event.preview.memory_id === 'string'
         && event.conversationId === selected.value && event.authorizationToken
-        && event.requiredPhrase) {
+        && (clickApproval || event.requiredPhrase)) {
       memoryPreview.value = { ...event.preview, action: event.action }
       memoryAuthorizationToken.value = event.authorizationToken
-      memoryRequiredPhrase.value = event.requiredPhrase
+      memoryRequiredPhrase.value = event.requiredPhrase || ''
       memoryAuthorizationInput.value = ''
+      memoryApprovalMode.value = clickApproval ? 'click' : 'typed'
       memoryPreviewDialog.value = true
     } else {
       memoryPreview.value = null
       memoryAuthorizationToken.value = ''
+      memoryApprovalMode.value = 'typed'
       call('cancelPendingPersonalMutation').catch(() => {})
       warning.value = 'Prévia não autorizada ou contexto alterado. Nenhuma memória foi modificada.'
     }
@@ -184,6 +188,7 @@ function handleStream(raw) {
     memoryAuthorizationToken.value = ''
     memoryAuthorizationInput.value = ''
     memoryRequiredPhrase.value = ''
+    memoryApprovalMode.value = 'typed'
     if (event.action === 'create') {
       createBusy.value = false
       createDialog.value = false
@@ -342,19 +347,24 @@ async function closeMemoryPreview() {
   memoryAuthorizationToken.value = ''
   memoryRequiredPhrase.value = ''
   memoryAuthorizationInput.value = ''
+  memoryApprovalMode.value = 'typed'
   memoryPreviewReplacement.value = ''
   try { await call('cancelPendingPersonalMutation') } catch {}
 }
 
 async function confirmMemoryMutation() {
   if (!memoryPreview.value || memoryMutationBusy.value ||
-      memoryAuthorizationInput.value !== memoryRequiredPhrase.value ||
-      !memoryAuthorizationToken.value) return
+      !memoryAuthorizationToken.value ||
+      (memoryApprovalMode.value === 'typed' &&
+       memoryAuthorizationInput.value !== memoryRequiredPhrase.value)) return
   memoryMutationBusy.value = true
   warning.value = ''
   try {
-    const result = await call('confirmPersonalMutation',
-      memoryAuthorizationToken.value, memoryAuthorizationInput.value, selected.value)
+    const result = memoryApprovalMode.value === 'click'
+      ? await call('approvePersonalMutation',
+          memoryAuthorizationToken.value, selected.value)
+      : await call('confirmPersonalMutation',
+          memoryAuthorizationToken.value, memoryAuthorizationInput.value, selected.value)
     memoryAuthorizationToken.value = '' // No local replay, even on error.
     if (!result.ok) {
       memoryMutationBusy.value = false
@@ -624,7 +634,7 @@ onMounted(async () => {
       <v-card v-if="memoryPreview" title="Confirmação supervisionada da memória">
         <v-card-text>
           <p>Operação solicitada: <strong>{{ memoryPreview.action === 'forget' ? 'Esquecer' : 'Substituir' }}</strong></p>
-          <p>UUID: <code>{{ memoryPreview.memory_id }}</code></p>
+          <p v-if="memoryApprovalMode === 'typed'">UUID: <code>{{ memoryPreview.memory_id }}</code></p>
           <p>Escopo: {{ memoryPreview.scope }} · Tipo: {{ memoryPreview.memory_type }}</p>
           <p>Estado: {{ memoryPreview.lifecycle }}</p>
           <p>Conteúdo atual:</p>
@@ -634,15 +644,16 @@ onMounted(async () => {
             <div class="memory-preview-content">{{ memoryPreviewReplacement }}</div>
           </template>
           <p class="memory-preview-disclaimer">
-            A prévia não modifica nada. Para autorizar a operação REAL e persistente,
-            digite exatamente a frase abaixo. A autorização vale apenas para esta prévia.
-            No esquecimento, o conteúdo será eliminado permanentemente.
+            A prévia não modifica nada. A autorização vale apenas para esta memória e
+            esta operação. No esquecimento, o conteúdo será eliminado permanentemente.
           </p>
-          <div class="source-meta">Confirmação necessária: {{ memoryRequiredPhrase }}</div>
-          <v-text-field v-model="memoryAuthorizationInput"
-            label="Digite a confirmação exata"
-            variant="outlined" density="compact" autocomplete="off"
-            :disabled="memoryMutationBusy"/>
+          <template v-if="memoryApprovalMode === 'typed'">
+            <div class="source-meta">Confirmação necessária: {{ memoryRequiredPhrase }}</div>
+            <v-text-field v-model="memoryAuthorizationInput"
+              label="Digite a confirmação exata"
+              variant="outlined" density="compact" autocomplete="off"
+              :disabled="memoryMutationBusy"/>
+          </template>
 
         </v-card-text>
         <v-card-actions>
@@ -652,7 +663,8 @@ onMounted(async () => {
           </v-btn>
           <v-btn color="error" :loading="memoryMutationBusy"
             :disabled="memoryMutationBusy || !memoryAuthorizationToken ||
-              memoryAuthorizationInput !== memoryRequiredPhrase"
+              (memoryApprovalMode === 'typed' &&
+               memoryAuthorizationInput !== memoryRequiredPhrase)"
             @click="confirmMemoryMutation">
             {{ memoryPreview.action === 'forget' ? 'Confirmar esquecimento' : 'Confirmar substituição' }}
           </v-btn>
