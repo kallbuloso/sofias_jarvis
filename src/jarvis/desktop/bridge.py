@@ -338,6 +338,21 @@ class JarvisBridge(QObject):
         return _json({"ok": True, "items": self._store.list_conversations()})
 
     @Slot(str, result=str)
+    def deleteConversation(self, conversation_id: str) -> str:
+        """Owner-requested local transcript deletion; never deletes Memory."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        from uuid import UUID
+        try:
+            if str(UUID(conversation_id)) != conversation_id:
+                return _json({"ok": False, "error": "invalid_conversation"})
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_conversation"})
+        self._mutation_gate.clear()
+        deleted = self._store.delete_conversation(conversation_id)
+        return _json({"ok": deleted, "error": None if deleted else "unknown_conversation"})
+
+    @Slot(str, result=str)
     def listMessages(self, conversation_id: str) -> str:
         try:
             return _json({"ok": True, "items": self._store.list_messages(conversation_id)})
