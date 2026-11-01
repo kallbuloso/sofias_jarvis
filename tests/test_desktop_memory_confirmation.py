@@ -38,7 +38,11 @@ def test_mutation_requires_consumed_confirmation_and_cannot_repeat(monkeypatch, 
                "lifecycle": "active"}
     token, phrase = bridge._mutation_gate.offer("supersede", preview, "new", conv)
     calls = []
-    def replace(self, confirmed_preview, *, new_content):
+    def replace(self, confirmed_preview, *, new_content, confirmation):
+        assert confirmation.method == "desktop_typed"
+        assert confirmation.action == "supersede"
+        assert confirmation.target_memory_id == confirmed_preview["memory_id"]
+        assert confirmation.conversation_id == conv
         calls.append((confirmed_preview["memory_id"], new_content))
         return {"status": "CONFIRMED", "operation_id": str(uuid4()),
                 "replacement_memory_id": str(uuid4())}
