@@ -147,7 +147,14 @@ def test_mutating_and_scheduler_intents_are_not_executed(tmp_path, monkeypatch, 
     worker.run()
     result = db.list_messages(cid)[-1]
     assert result["status"] == "completed"
-    assert "não" in result["content"].lower() or "Nenhuma" in result["content"]
+    if action == "memory_create":
+        assert worker.create_proposal == {
+            "content": "Prefiro teal.", "scope": None,
+        }
+        assert "Ainda não gravei" in result["content"]
+    else:
+        assert worker.create_proposal is None
+        assert "não" in result["content"].lower() or "Nenhuma" in result["content"]
     assert memory_calls == knowledge_calls == []
     assert [x["stream"] for x in calls] == [False]
 
