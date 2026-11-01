@@ -221,3 +221,29 @@ performs this CLI Create with its own GRAVAR confirmation; then
 Supersede/Forget are tested in separate steps against that new
 lab-owned UUID only. No model-triggered writes, no mutation of
 the preserved teal memory. B-02 remains queued.
+
+## B-01c — disposable personal memory Create acknowledged (2026-11-01)
+
+The owner explicitly ran the supervised CLI `--memory-create` command
+for a **new disposable** `project:jarvis` personal memory and supplied
+the following confirmed response, not a fabricated test fixture:
+
+- `status=CONFIRMED`
+- `operation_id=c6399b83-9c9a-43df-a51d-18e283d88cd7`
+- `memory_id=c55f0c57-2b22-43f0-924b-191eb0688c2f`
+- `scope=project:jarvis`
+
+The intended text is an innocuous disposable orange-color preference.
+The create acknowledgement alone does **not** prove the current remote
+record and local journal are mutually consistent. Before any real
+Supersede, the owner must independently run:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --memory-get c55f0c57-2b22-43f0-924b-191eb0688c2f
+.\.venv\Scripts\python.exe main.py --memory-operation c6399b83-9c9a-43df-a51d-18e283d88cd7
+```
+
+Expected: active `project:jarvis/semantic` memory, original disposable
+content and confirmed local operation associated with the same memory
+UUID. No Supersede/Forget has yet been authorized for this record,
+and the real `global/profile` teal preference remains out of scope.
