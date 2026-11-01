@@ -39,6 +39,19 @@ class FakeClient:
         self.calls.append(("get", memory_id))
         return dict(self.memories[memory_id])
 
+    def recall(self, *, query, scopes, top_k=10, include_superseded=False):
+        self.calls.append(("recall", query, tuple(scopes)))
+        hits = []
+        for memory in self.memories.values():
+            if (memory.get("lifecycle") == "active"
+                    and memory.get("scope") in scopes):
+                hits.append({
+                    "memory": dict(memory),
+                    "relevance": 0.9,
+                    "is_current_truth": True,
+                })
+        return hits[:top_k]
+
     def supersede(self, memory_id, *, content, provenance, idempotency_key):
         self.calls.append(("supersede", memory_id, idempotency_key))
         if self.failure:
@@ -394,3 +407,32 @@ def test_direct_create_requires_persisted_exact_user_message(lifecycle):
         lifecycle.create(content="prefiro teal", scope="global",
                          conversation_id=conversation, confirmation=consent2)
     assert lifecycle.client.calls == []
+
+def test_natural_target_resolution_uses_only_owned_memory(lifecycle):
+    owned_id = owned(lifecycle.journal, lifecycle.client)
+    foreign_id = str(uuid4())
+    lifecycle.client.memories[foreign_id] = {
+        "memory_id": foreign_id, "memory_type": "profile", "scope": "global",
+        "content": "Outra preferência", "lifecycle": "active",
+        "provenance": {
+            "origin_kind": "user_asserted", "source_system": "jarvis",
+            "source_ref": "memory-operation:foreign",
+        },
+    }
+    preview = lifecycle.resolve_preview(
+        "atualize minha preferência de cor",
+        action="supersede", scopes=["global"],
+    )
+    assert preview["memory_id"] == owned_id
+    assert preview["content"] == "Prefiro teal"
+
+
+def test_natural_target_resolution_fails_closed_when_ambiguous(lifecycle):
+    owned(lifecycle.journal, lifecycle.client)
+    owned(lifecycle.journal, lifecycle.client)
+    with pytest.raises(ValueError, match="memory_target_ambiguous"):
+        lifecycle.resolve_preview(
+            "esqueça minha preferência",
+            action="forget", scopes=["global"],
+        )
+
