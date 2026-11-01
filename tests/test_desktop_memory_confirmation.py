@@ -262,6 +262,7 @@ def test_create_gate_rejects_different_scope_and_unknown_conversation(monkeypatc
 
 def test_create_preview_waits_for_reply_thread_cleanup(monkeypatch, tmp_path):
     from PySide6.QtCore import QThread
+    app = QCoreApplication.instance() or QCoreApplication([])
     prepare(monkeypatch, tmp_path)
     bridge = JarvisBridge()
     conv = json.loads(bridge.createConversation())["id"]
@@ -279,3 +280,4 @@ def test_create_preview_waits_for_reply_thread_cleanup(monkeypatch, tmp_path):
     assert events[0]["type"] == "create_proposal"
     assert events[0]["authorizationToken"]
     assert json.loads(bridge.cancelConversationalCreate())["ok"] is True
+    app.processEvents()
