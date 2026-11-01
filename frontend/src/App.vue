@@ -394,7 +394,7 @@ onMounted(async () => {
               @keydown.ctrl.enter.prevent="sendMessage"/>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
               :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy ||
-                (!model.trim() && !/^\\/(?:esquecer|atualizar)(?:\\s|$)/i.test(draft.trim()))"
+                (!model.trim() && !draft.trim().startsWith('/'))"
               @click="sendMessage">Enviar</v-btn>
           </div>
         </div>
