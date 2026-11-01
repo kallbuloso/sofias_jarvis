@@ -234,10 +234,17 @@ class MemoryMutationWorker(QObject):
             lifecycle = PersonalMemoryLifecycle(
                 client, MemoryOperationJournal(database_path()), url,
             )
-            result = (lifecycle.supersede(self.pending.preview,
-                                          new_content=self.pending.replacement)
-                      if self.pending.action == "supersede"
-                      else lifecycle.forget(self.pending.preview))
+            if self.pending.authorization is None:
+                raise ValueError("missing_human_confirmation")
+            result = (lifecycle.supersede(
+                          self.pending.preview,
+                          new_content=self.pending.replacement,
+                          confirmation=self.pending.authorization,
+                      ) if self.pending.action == "supersede"
+                      else lifecycle.forget(
+                          self.pending.preview,
+                          confirmation=self.pending.authorization,
+                      ))
             safe = {
                 "ok": result.get("status") == "CONFIRMED",
                 "status": result.get("status", "RESULT_UNKNOWN"),
