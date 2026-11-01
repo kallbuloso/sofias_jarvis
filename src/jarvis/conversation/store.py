@@ -6,14 +6,15 @@ connections to the UI, so an ORM can be introduced later only if justified.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _now() -> str:
@@ -132,6 +133,25 @@ class SQLiteConversationStore:
                     WHERE confirmation_ref IS NOT NULL
                 """)
                 db.execute("PRAGMA user_version = 4")
+                version = 4
+            if version == 4:
+                # Metadata only: no chunk text or user prompt is copied here.
+                db.execute("""
+                    CREATE TABLE message_knowledge_evidence (
+                        assistant_message_id TEXT PRIMARY KEY
+                            REFERENCES messages(id) ON DELETE CASCADE,
+                        query_id TEXT,
+                        dataset TEXT NOT NULL CHECK (dataset = 'jarvis-knowledge'),
+                        retrieval_status TEXT NOT NULL CHECK (
+                            retrieval_status IN (
+                                'RESULTS_FOUND','NO_RESULTS','UNAVAILABLE','NOT_ATTEMPTED'
+                            )
+                        ),
+                        references_json TEXT NOT NULL,
+                        retrieved_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("PRAGMA user_version = 5")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
@@ -169,7 +189,77 @@ class SQLiteConversationStore:
                 "FROM messages WHERE conversation_id = ? ORDER BY position",
                 (conversation_id,),
             ).fetchall()
-            return [dict(row) for row in rows]
+            items = [dict(row) for row in rows]
+            if items:
+                evidence = db.execute(
+                    "SELECT k.assistant_message_id,k.query_id,k.dataset,"
+                    "k.retrieval_status,k.references_json,k.retrieved_at "
+                    "FROM message_knowledge_evidence k "
+                    "JOIN messages m ON m.id=k.assistant_message_id "
+                    "WHERE m.conversation_id=?",
+                    (conversation_id,),
+                ).fetchall()
+                index = {item["id"]: item for item in items}
+                for item in evidence:
+                    index[item["assistant_message_id"]]["knowledgeEvidence"] = {
+                        "queryId": item["query_id"],
+                        "dataset": item["dataset"],
+                        "knowledgeStatus": item["retrieval_status"],
+                        "references": json.loads(item["references_json"]),
+                        "retrievedAt": item["retrieved_at"],
+                    }
+            return items
+
+    def save_knowledge_evidence(self, assistant_message_id: str, *,
+                                dataset: str, knowledge_status: str,
+                                query_id: str | None, references: list[dict]) -> None:
+        """Save bounded verified reference metadata on the exact assistant message.
+
+        Never store chunks, quotes, arbitrary URLs or generated citations.
+        The caller must supply references validated by KnowledgeAwareTextProvider.
+        """
+        target = str(UUID(assistant_message_id))
+        if target != assistant_message_id or dataset != "jarvis-knowledge":
+            raise ValueError("invalid_knowledge_target_or_dataset")
+        if knowledge_status not in {
+            "RESULTS_FOUND", "NO_RESULTS", "UNAVAILABLE", "NOT_ATTEMPTED"
+        }:
+            raise ValueError("invalid_knowledge_retrieval_status")
+        if query_id is not None:
+            if not isinstance(query_id, str) or str(UUID(query_id)) != query_id:
+                raise ValueError("invalid_knowledge_query_id")
+        if (not isinstance(references, list) or len(references) > 3
+                or (knowledge_status != "RESULTS_FOUND" and references)):
+            raise ValueError("invalid_knowledge_references")
+        safe = []
+        for reference in references:
+            if not isinstance(reference, dict):
+                raise ValueError("invalid_knowledge_reference")
+            ids = {}
+            for key in ("source_id", "document_id", "chunk_id"):
+                value = reference.get(key)
+                if not isinstance(value, str) or str(UUID(value)) != value:
+                    raise ValueError("invalid_knowledge_reference_identity")
+                ids[key] = value
+            name = reference.get("source_name")
+            if not isinstance(name, str) or not 1 <= len(name) <= 200:
+                raise ValueError("invalid_knowledge_source_name")
+            safe.append({"source_name": name, **ids})
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT role,status FROM messages WHERE id=?", (target,),
+            ).fetchone()
+            if row is None or row["role"] != "assistant":
+                raise ValueError("knowledge_evidence_requires_assistant_message")
+            # A single turn may save evidence only once. Duplicate worker events
+            # must never silently overwrite attribution for a different reply.
+            db.execute(
+                "INSERT INTO message_knowledge_evidence "
+                "(assistant_message_id,query_id,dataset,retrieval_status,"
+                "references_json,retrieved_at) VALUES (?,?,?,?,?,?)",
+                (target, query_id, dataset, knowledge_status,
+                 json.dumps(safe, ensure_ascii=False, separators=(",", ":")), _now()),
+            )
 
     def append_user_message(self, conversation_id: str, content: str) -> str:
         if not content.strip():
