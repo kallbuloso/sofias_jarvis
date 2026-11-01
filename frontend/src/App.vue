@@ -167,8 +167,8 @@ function handleStream(raw) {
       UNAVAILABLE: 'Knowledge indisponível; nenhuma fonte foi confirmada.',
       NOT_ATTEMPTED: 'A consulta documental não foi executada.',
     }
-    knowledgeNotice.value = event.evidencePersistence === 'FAILED'
-      ? 'Falha ao salvar fontes no histórico; nenhuma referência foi persistida.'
+    knowledgeNotice.value = event.evidencePersistence !== 'SAVED'
+      ? 'Não foi possível registrar fontes no histórico desta resposta.'
       : (descriptions[event.knowledgeStatus] || '')
     return
   }
