@@ -409,3 +409,34 @@ consent and fake desktop worker. **Authoring environment has not run
 the Windows pytest suite or Vite build.** Await results before B-01
 Product Done. Existing confirmed mutations stay historical, without
 fabricated consent evidence. No merge to main and no TB-03.
+
+## 17. TB-02 finalization checkpoint — B-01 PASS, B-02a implementation pending test
+
+Owner validated the B-01d SQLite v4 migration on Windows:
+`202 passed in 7.54s`, Vite built 559 modules in 5.55s,
+and historical `--memory-operation` returned `confirmed` with
+all newly added authorization columns `null`, correctly avoiding
+retroactive consent. Earlier human evidence confirmed the full
+disposable Create → Supersede → Forget lifecycle, matching local
+journal outcomes and preserved existing personal teal preference.
+**B-01 functional and contract acceptance = PASS**; not a TB-02
+Product Done or merge authorization.
+
+B-02a now implemented on `feat/tb-02-memory-knowledge`:
+SQLite v5 sidecar `message_knowledge_evidence` on exact assistant
+message ID; validated/size-bounded Knowledge references and query/
+dataset/retrieval status/time; no full chunks, quotes or fabricated
+URLs persisted. Retrieval metadata is loaded with chat history and
+shown per assistant message, including after restart or switching
+conversations. Failed/interrupted answers are not marked completed.
+The existing `jarvis-knowledge` dataset restriction remains intact.
+New offline tests cover isolation, recovery, migration, failure,
+duplicate evidence and worker persistence.
+
+**B-02a NOT YET ACCEPTED:** new v5 migration requires another
+production SQLite backup and Windows pytest/Vite, followed by
+desktop Knowledge smoke with restart/switching. Expected automated
+collection `214` based on 202 previous + 12 new parametrized
+cases (not verified locally). See
+`docs/implementation/TB-02-B02-Message-Evidence.md`.
+No TB-03 implementation, no `main` merge.
