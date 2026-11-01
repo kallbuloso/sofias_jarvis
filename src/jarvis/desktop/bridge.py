@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from jarvis.adapters.openai_responses import OpenAIResponsesAdapter
 from jarvis.config import database_path
 from jarvis.desktop.diagnostics import trace
+from jarvis.desktop.model_preferences import bootstrap_model, save_preferred_model
 from jarvis.conversation.runtime import ConversationRuntime
 from jarvis.conversation.store import SQLiteConversationStore
 from jarvis.secrets.windows import WindowsCredentialStore
@@ -555,7 +556,7 @@ class JarvisBridge(QObject):
             "ok": True,
             "memoryConfigured": memory_configured,
             "conversations": self._store.list_conversations(),
-            "model": os.getenv("JARVIS_MODEL", ""),
+            "model": bootstrap_model(),
             "credentialConfigured": has_key,
         })
 
@@ -869,6 +870,13 @@ class JarvisBridge(QObject):
         thread.finished.connect(self._on_thread_finished)
         trace("bridge_thread_starting")
         thread.start()
+        # This is a desktop preference, not the cognitive memory store.
+        # Do not abort an accepted reply if the local preference write fails.
+        try:
+            save_preferred_model(model.strip())
+        except (OSError, ValueError) as exc:
+            trace("desktop_model_preference_write_failed",
+                  error_class=type(exc).__name__)
         trace("bridge_thread_started_request")
         return _json({"ok": True, "conversationId": conversation_id})
 
