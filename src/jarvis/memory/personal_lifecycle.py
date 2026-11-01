@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError, _payload
 from jarvis.memory.connection import validate_memory_url
 from jarvis.memory.journal import MemoryOperationJournal
+from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
 from jarvis.memory.sensitive import looks_like_credential
 
 
@@ -81,7 +82,18 @@ class PersonalMemoryLifecycle:
         if current != preview:
             raise ValueError("memory_changed_since_confirmation")
 
-    def supersede(self, confirmed_preview: dict, *, new_content: str) -> dict:
+    @staticmethod
+    def _require_typed_consent(
+        preview: dict, action: str, confirmation: PersonalMutationAuthorization,
+    ) -> None:
+        if (not isinstance(confirmation, PersonalMutationAuthorization)
+                or confirmation.action != action
+                or confirmation.target_memory_id != preview.get("memory_id")):
+            raise ValueError("missing_or_mismatched_human_confirmation")
+
+    def supersede(self, confirmed_preview: dict, *, new_content: str,
+                  confirmation: PersonalMutationAuthorization) -> dict:
+        self._require_typed_consent(confirmed_preview, "supersede", confirmation)
         self._recheck(confirmed_preview, "supersede")
         if looks_like_credential(new_content):
             raise ValueError("sensitive_content_rejected")
@@ -97,7 +109,8 @@ class PersonalMemoryLifecycle:
             "content": new_content, "provenance": provenance,
         }
         self.journal.prepare(operation_id, self.service_url, payload,
-                             kind="user_supersede", target_memory_id=target)
+                             kind="user_supersede", target_memory_id=target,
+                             confirmation=confirmation)
 
         def confirmed(reply: dict) -> dict:
             old, new = reply["old"], reply["replacement"]
@@ -122,7 +135,9 @@ class PersonalMemoryLifecycle:
             target, content=new_content, provenance=provenance,
             idempotency_key=operation_id), confirmed)
 
-    def forget(self, confirmed_preview: dict) -> dict:
+    def forget(self, confirmed_preview: dict, *,
+               confirmation: PersonalMutationAuthorization) -> dict:
+        self._require_typed_consent(confirmed_preview, "forget", confirmation)
         self._recheck(confirmed_preview, "forget")
         operation_id = str(uuid4())
         target = confirmed_preview["memory_id"]
@@ -130,6 +145,7 @@ class PersonalMemoryLifecycle:
             operation_id, self.service_url,
             {"idempotency_key": operation_id, "memory_id": target},
             kind="user_forget", target_memory_id=target,
+            confirmation=confirmation,
         )
 
         def confirmed(reply: dict) -> dict:
