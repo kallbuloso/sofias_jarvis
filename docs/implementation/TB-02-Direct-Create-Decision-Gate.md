@@ -102,3 +102,24 @@ records. Repeated, newly authored requests with *new message IDs*
 remain distinct explicit requests; only replay of the exact same
 source message is blocked. Record/deduplication and target-resolution
 are future decision-evaluation work, not validated here.
+
+## Owner Windows gate — 276 automated tests PASS
+
+Owner-reported verification for this branch on Windows (2026-11-01):
+
+- `python -m pytest -q`: **276 passed in 10.26s**.
+- `npm run build`: **PASS** in **5.08s** (Vite v7.3.7, 559 modules transformed).
+- The JS bundle exceeds 500 kB, yielding a non-blocking chunk warning.
+
+**Automated regression/build acceptance: PASS.** This does **not**
+establish human desktop decision routing, a live Sofias Memory Create,
+remote ACK, or durability after restart. Those remain **PENDING**.
+
+First required owner smoke: send a natural ambiguous request with no
+explicit scope; JARVIS must ask whether the information is global or
+project-specific and must not add a memory journal operation.
+Only then may a separate, intentionally disposable request exercise
+the low-risk direct Create workflow with no second click. Verify remote
+active state, `user_direct_intent` receipt bound to `user-message:<uuid>`,
+single successful assistant response, and restart persistence.
+Do not mutate the original global teal preference. No `main` merge.
