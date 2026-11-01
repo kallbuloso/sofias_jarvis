@@ -61,9 +61,13 @@ class MemoryOperationJournal:
             }.get(kind)
             if (expected_action is None or confirmation.action != expected_action
                     or confirmation.target_memory_id != target_memory_id
-                    or confirmation.method not in {"desktop_typed", "cli_typed"}
+                    or confirmation.method not in {
+                        "desktop_typed", "desktop_approved", "cli_typed"
+                    }
+                    or (confirmation.method == "desktop_approved"
+                        and (kind != "create" or confirmation.conversation_id is None))
                     or (confirmation.method == "desktop_typed"
-                        and confirmation.conversation_id is None)
+                        and (kind == "create" or confirmation.conversation_id is None))
                     or (confirmation.method == "cli_typed"
                         and confirmation.conversation_id is not None)):
                 raise ValueError("confirmation_does_not_match_operation")
