@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, nextTick, ref, watch } from 'vue'
+import { onMounted, nextTick, ref } from 'vue'
 
 const ready = ref(false)
 const conversations = ref([])
@@ -12,10 +12,7 @@ const warning = ref('')
 const deletionTarget = ref(null)
 const deletionBusy = ref(false)
 const credentialConfigured = ref(false)
-const memoryConfigured = ref(false)
-const useMemory = ref(false)
-const memoryScope = ref('')
-const memoryNotice = ref('')
+ const memoryNotice = ref('')
 const memoryPreviewBusy = ref(false)
 const memoryPreviewDialog = ref(false)
 const memoryPreview = ref(null)
@@ -24,16 +21,7 @@ const memoryAuthorizationToken = ref('')
 const memoryRequiredPhrase = ref('')
 const memoryAuthorizationInput = ref('')
 const memoryMutationBusy = ref(false)
-const useKnowledge = ref(false)
-const knowledgeDataset = ref('')
 const knowledgeNotice = ref('')
-const knowledgeItems = [
-  { title: 'JARVIS Knowledge', value: 'jarvis-knowledge' },
-]
-const scopeItems = [
-  { title: 'Global', value: 'global' },
-  { title: 'Projeto JARVIS', value: 'project:jarvis' },
-]
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
 function inlineParts(value) {
@@ -53,21 +41,6 @@ function inlineParts(value) {
   }
   return parts
 }
-
-watch([useKnowledge, knowledgeDataset], () => {
-  knowledgeNotice.value = ''
-  if (knowledgeDataset.value && warning.value === 'Selecione um dataset antes de consultar Knowledge.') {
-    warning.value = ''
-  }
-})
-
-watch([useMemory, memoryScope], () => {
-  // Retrieval evidence belongs to the last completed request and scope.
-  memoryNotice.value = ''
-  if (memoryScope.value && warning.value === 'Selecione um escopo antes de consultar o Sofias Memory.') {
-    warning.value = ''
-  }
-})
 
 const historyEnd = ref(null)
 let bridge = null
@@ -97,7 +70,7 @@ async function openConversation(id, preserveNotices = false) {
     if (!preserveNotices) {
       memoryNotice.value = ''
       knowledgeNotice.value = ''
-            }
+    }
     await scrollToBottom()
   }
 }
@@ -220,6 +193,9 @@ function handleStream(raw) {
       }
       memoryNotice.value = statuses[event.memoryStatus] || ''
     }
+    if (event.routingStatus === 'UNAVAILABLE' && event.conversationId === selected.value) {
+      warning.value = 'Roteamento de intenções indisponível; nenhuma ação automática de memória foi executada.'
+    }
     if (event.status !== 'completed') {
       warning.value = event.status === 'interrupted'
         ? 'Resposta interrompida.'
@@ -319,14 +295,6 @@ async function sendMessage() {
     return
   }
   if (!model.value.trim()) return
-  if (useMemory.value && !memoryScope.value) {
-    warning.value = 'Selecione um escopo antes de consultar o Sofias Memory.'
-    return
-  }
-  if (useKnowledge.value && knowledgeDataset.value !== 'jarvis-knowledge') {
-    warning.value = 'Selecione um dataset antes de consultar Knowledge.'
-    return
-  }
   warning.value = ''
   memoryNotice.value = ''
   knowledgeNotice.value = ''
@@ -337,12 +305,8 @@ async function sendMessage() {
   messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
   scrollToBottom()
   try {
-    const result = useKnowledge.value
-      ? await call('sendMessageWithContext', conversationId, text, model.value.trim(),
-          useMemory.value ? memoryScope.value : '', knowledgeDataset.value)
-      : useMemory.value
-        ? await call('sendMessageWithMemory', conversationId, text, model.value.trim(), memoryScope.value)
-        : await call('sendMessage', conversationId, text, model.value.trim())
+    const result = await call('sendConversationalMessage',
+      conversationId, text, model.value.trim())
     if (!result.ok) {
       busy.value = false
       draft.value = text
@@ -371,7 +335,6 @@ onMounted(async () => {
     conversations.value = initial.conversations
     model.value = initial.model
     credentialConfigured.value = initial.credentialConfigured
-    memoryConfigured.value = initial.memoryConfigured === true
     ready.value = true
     if (conversations.value.length) await openConversation(conversations.value[0].id)
     else await createConversation()
@@ -471,47 +434,10 @@ onMounted(async () => {
             </div>
             <div ref="historyEnd"></div>
           </div>
-          <div class="memory-bar">
-            <v-switch v-model="useMemory" color="primary" density="compact"
-              hide-details label="Consultar Sofias Memory"
-              :disabled="!memoryConfigured || busy"/>
-            <v-select v-if="useMemory" v-model="memoryScope" :items="scopeItems"
-              label="Escopo da memória" variant="outlined" density="compact"
-              hide-details clearable :disabled="busy" class="memory-scope"/>
-            <span v-if="useMemory" class="memory-caption">
-              A pergunta será consultada no Sofias Memory; evidências selecionadas serão enviadas ao modelo.
-            </span>
-            <span class="memory-caption" v-else-if="!memoryConfigured">
-              Configure a URL e chave do Sofias Memory pelo console.
-            </span>
-            <span class="memory-caption" v-else>
-              Desligado: esta conversa não consulta memórias cognitivas.
-            </span>
-            <div v-if="useMemory && memoryNotice" class="memory-feedback"
-              role="status" aria-live="polite">{{ memoryNotice }}</div>
-          </div>
-          <div class="knowledge-bar">
-            <v-switch v-model="useKnowledge" color="primary" density="compact"
-              hide-details label="Consultar Knowledge"
-              :disabled="!memoryConfigured || busy"/>
-            <v-select v-if="useKnowledge" v-model="knowledgeDataset" :items="knowledgeItems"
-              label="Dataset documental" variant="outlined" density="compact"
-              hide-details clearable :disabled="busy" class="memory-scope"/>
-            <span v-if="useKnowledge" class="memory-caption">
-              A pergunta consultará documentos do dataset selecionado; as evidências serão enviadas ao modelo.
-            </span>
-            <span v-else-if="!memoryConfigured" class="memory-caption">
-              Configure o Sofias Memory pelo console antes de usar Knowledge.
-            </span>
-            <span v-else class="memory-caption">
-              Desligado: não consulta documentos do Sofias Memory.
-            </span>
-            <div v-if="useKnowledge && knowledgeNotice" class="memory-feedback"
-              role="status" aria-live="polite">{{ knowledgeNotice }}</div>
-          </div>
-          <div class="memory-command-hint">
-            Comandos supervisionados: /esquecer UUID
-            ou /atualizar UUID | nova informação.
+          <div v-if="memoryNotice || knowledgeNotice" class="context-notice"
+            role="status" aria-live="polite">
+            <span v-if="memoryNotice">{{ memoryNotice }}</span>
+            <span v-if="knowledgeNotice">{{ knowledgeNotice }}</span>
           </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
@@ -609,15 +535,9 @@ html, body, #app { height: 100%; margin: 0; }
 .speaker { font-size: 11px; letter-spacing: 0.4px; color: #85d1c9; margin-bottom: 7px; }
 .content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .status { font-size: 11px; color: #c69d6b; margin-top: 6px; }
-.memory-bar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 10px 14px;
-  padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
-.memory-feedback { flex: 0 0 100%; min-height: 0; max-height: 76px; overflow-y: auto;
-  align-self: flex-start; color: #7bceca; font-size: 12px; line-height: 1.45;
-  border-left: 2px solid #008080; padding: 4px 10px; background: rgba(0,128,128,.06);
-  overflow-wrap: anywhere; }
-.memory-scope { max-width: 240px; min-width: 180px; }
-.knowledge-bar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center;
-  gap: 10px 14px; padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
+.context-notice { display: flex; flex-direction: column; gap: 2px;
+  flex: 0 0 auto; padding: 6px 26px; border-top: 1px solid #243441;
+  color: #7bceca; background: #101e28; font-size: 12px; }
  .message-knowledge { margin-top: 12px; border-top: 1px solid #29444a; padding-top: 9px; }
 .knowledge-sources { flex: 0 0 100%; color: #a3d9d4; font-size: 12px;
   border-left: 2px solid #008080; padding: 6px 10px;
@@ -627,14 +547,12 @@ html, body, #app { height: 100%; margin: 0; }
 .source-title { color: #b7e6e2; font-weight: 600; }
 .source-meta { color: #829fa4; font-size: 11px; }
 .source-quote { white-space: pre-wrap; max-height: 70px; overflow: auto; }
-.memory-caption { color: #82969e; font-size: 12px; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
 </style>
 
 <style scoped>
-.memory-command-hint { padding: 5px 26px; font-size: 12px; color: #819ca2; }
 .memory-preview-content { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px;
   border: 1px solid #32545b; border-radius: 8px; background: #132932; }
 .memory-preview-disclaimer { margin-top: 16px; font-size: 13px; color: #b5b9c9; }
