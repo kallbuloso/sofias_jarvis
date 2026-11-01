@@ -42,7 +42,7 @@ def environment(monkeypatch, tmp_path, action, *, route_failure=False):
                     "action": action, "scope": "global" if action == "memory_recall"
                     else None,
                     "content": "Prefiro teal."
-                    if action == "memory_create" else None,
+                    if action in {"memory_create", "memory_update"} else None,
                 }))
             return iter([
                 SimpleNamespace(type="response.output_text.delta",
