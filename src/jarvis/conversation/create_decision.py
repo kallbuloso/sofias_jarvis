@@ -31,7 +31,8 @@ _TEMPORAL = re.compile(
     re.I,
 )
 _COMPOUND = re.compile(
-    r"\b(?:e\s+(?:esque[cç]a|apague|delete|envie|execute|compre|pague|"\n    r"transfira|publique|instale|exclua|mande)|"
+    r"\b(?:e\s+(?:esque[cç]a|apague|delete|envie|execute|compre|pague|"
+    r"transfira|publique|instale|exclua|mande)|"
     r"n[aã]o\s+(?:grave|guarde|registre|lembre))\b",
     re.I,
 )
