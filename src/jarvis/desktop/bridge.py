@@ -7,6 +7,7 @@ database connections remain in Python. The actual provider runs in a QThread.
 from __future__ import annotations
 
 from contextlib import closing
+from uuid import UUID
 import json
 import os
 import threading
@@ -152,6 +153,51 @@ class ReplyWorker(QObject):
                   knowledge=self.knowledge_dataset is not None)
             self.done.emit(self.conversation_id, result, error_code, memory_status)
 
+class MemoryPreviewWorker(QObject):
+    """Read-only remote preview; no mutation methods or execution token."""
+    finishedPreview = Signal(str)
+
+    def __init__(self, action: str, memory_id: str):
+        super().__init__()
+        self.action = action
+        self.memory_id = memory_id
+
+    @Slot()
+    def run(self) -> None:
+        trace("memory_preview_begin")
+        try:
+            from jarvis.memory.cognitive import CognitiveMemoryClient
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+            url = configured_memory_url()
+            if not url:
+                raise ValueError("memory_not_configured")
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                raise ValueError("memory_key_missing")
+            client = CognitiveMemoryClient(url, key)
+            if client.diagnose().get("status") != "COMPATIBLE":
+                raise ValueError("memory_contract_incompatible")
+            lifecycle = PersonalMemoryLifecycle(
+                client, MemoryOperationJournal(database_path()), url,
+            )
+            preview = lifecycle.preview(self.memory_id, action=self.action)
+            result = {"ok": True, "action": self.action, "preview": {
+                "memory_id": preview["memory_id"],
+                "memory_type": preview["memory_type"],
+                "scope": preview["scope"],
+                "lifecycle": preview["lifecycle"],
+                "content": preview["content"],
+            }}
+        except Exception as exc:
+            # Never send SDK exceptions, provider errors or credentials to UI.
+            result = {"ok": False, "error": type(exc).__name__}
+        trace("memory_preview_end", ok=bool(result["ok"]))
+        self.finishedPreview.emit(_json(result))
+
+
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
 
@@ -162,13 +208,15 @@ class JarvisBridge(QObject):
         self._thread: QThread | None = None
         self._closing = False
         self._window = None
+        self._preview_worker: MemoryPreviewWorker | None = None
+        self._preview_thread: QThread | None = None
 
     def attach_window(self, window) -> None:
         self._window = window
 
     @property
     def active(self) -> bool:
-        return self._thread is not None
+        return self._thread is not None or self._preview_thread is not None
 
     @Slot(result=str)
     def bootstrap(self) -> str:
@@ -246,6 +294,52 @@ class JarvisBridge(QObject):
         return self._dispatch(conversation_id, prompt, model,
                               memory_scope=validated_scope,
                               knowledge_dataset=knowledge_dataset or None)
+
+    @Slot(str, str, result=str)
+    def previewPersonalMemory(self, action: str, memory_id: str) -> str:
+        """Read-only. The UI cannot authorize mutating effects through this slot."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        if action not in {"supersede", "forget"}:
+            return _json({"ok": False, "error": "invalid_action"})
+        try:
+            target_id = str(UUID(memory_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_memory_id"})
+        worker = MemoryPreviewWorker(action, target_id)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._preview_worker = worker
+        self._preview_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedPreview.connect(self._on_memory_preview)
+        worker.finishedPreview.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_preview_thread_finished)
+        trace("memory_preview_thread_starting")
+        thread.start()
+        return _json({"ok": True, "status": "PREVIEW_REQUESTED"})
+
+    @Slot(str)
+    def _on_memory_preview(self, raw_result: str) -> None:
+        try:
+            data = json.loads(raw_result)
+        except (ValueError, TypeError):
+            data = {"ok": False, "error": "invalid_preview_result"}
+        self.streamEvent.emit(_json({"type": "memory_preview", **data}))
+
+    @Slot()
+    def _on_preview_thread_finished(self) -> None:
+        trace("memory_preview_thread_finished",
+              in_gui_thread=QThread.currentThread() == self.thread())
+        thread = self._preview_thread
+        if thread is None:
+            return
+        self._preview_thread = None
+        self._preview_worker = None
+        thread.deleteLater()
+        if self._closing and self._window is not None and not self.active:
+            QTimer.singleShot(0, self._window.close)
 
     def _dispatch(
         self, conversation_id: str, prompt: str, model: str, *,
@@ -336,7 +430,7 @@ class JarvisBridge(QObject):
         self._thread = None
         self._worker = None
         thread.deleteLater()
-        if self._closing and self._window is not None:
+        if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
     def request_shutdown(self) -> None:
