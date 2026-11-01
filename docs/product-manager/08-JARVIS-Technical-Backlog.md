@@ -389,3 +389,23 @@ verification requires a newly created, authorized disposable personal
 record after static and cancel-only tests pass. B-01 is not Product
 Done. B-02 remains scheduled for the next increment; no merge/main,
 no TB-03.
+
+## 16. TB-02 B-01d — Consent audit follow-up pending acceptance
+
+Owner reported disposable blue memory successfully forgotten in Sofias
+Memory (`lifecycle=forgotten`, `content=null`, `scope=null`).
+The local journal query reported matching
+`user_forget` operation ID
+`6e925d24-1205-4864-9a69-79fc6616d154`, `confirmed`,
+`error_code=NULL`. Functional supervised mutation flow **PASS**.
+
+Found a traceability gap: those journal rows prove execution and
+status, not durable typed consent. B-01d now implemented on the feature
+branch, adding non-retroactive SQLite v4 consent metadata tied to each
+new operation. Desktop and CLI caller sites were updated; mutation
+lifecycle rejects absent/mismatched receipts. Dedicated tests were
+added for legacy NULL, replay blocking, atomicity, restart, CLI
+consent and fake desktop worker. **Authoring environment has not run
+the Windows pytest suite or Vite build.** Await results before B-01
+Product Done. Existing confirmed mutations stay historical, without
+fabricated consent evidence. No merge to main and no TB-03.
