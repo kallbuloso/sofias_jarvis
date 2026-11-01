@@ -263,3 +263,27 @@ Interpretar a sequência com cautela:
 
 **Aceite ainda bloqueado por estabilidade.** Não fazer merge na
 `main` nem iniciar TB-03 enquanto essa falha permanecer sem análise.
+
+
+## Nova execução pós-correção — evidência parcial de estabilidade
+
+O proprietário executou a suíte completa após a correção do slot Qt,
+com **172 passed in 4.90s**. Na sequência, lançou o desktop com
+`PYTHONFAULTHANDLER=1` e `JARVIS_DESKTOP_DIAGNOSTICS=1`,
+via `-X faulthandler -u` e `Tee-Object`.
+
+O processo retornou ao PowerShell sem mensagens de erro reportadas e
+`JARVIS_EXIT_CODE=0`. Nesta execução **não foi observado**
+`Fatal Python error: Aborted` nem o aviso
+`QDxgiVSyncService not destroyed in time`.
+
+**Interpretação:** PASS dos testes e saída normal dessa execução.
+Não é evidência suficiente de que a falha nativa intermitente esteja
+definitivamente resolvida. Ainda falta o conteúdo de
+`desktop-lifecycle.jsonl` para confirmar a sequência efetiva de
+`bridge_thread_finished`, `window_close_accepted`,
+`qt_about_to_quit` e `qt_event_loop_exit`, bem como a descrição
+do teste funcional realizado antes do encerramento.
+
+**Status:** estabilidade em observação; TB-02 IN PROGRESS. Não há
+autorização de merge para `main` ou avanço para TB-03.
