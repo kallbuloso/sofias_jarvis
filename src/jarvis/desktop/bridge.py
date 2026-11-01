@@ -337,6 +337,58 @@ class MemoryMutationWorker(QObject):
         self.finishedMutation.emit(_json(safe))
 
 
+class ConversationalCreateWorker(QObject):
+    """One approved Cognitive Create; no LLM or Qt WebView controls the write."""
+    finishedMutation = Signal(str)
+
+    def __init__(self, pending):
+        super().__init__()
+        self.pending = pending
+
+    @Slot()
+    def run(self) -> None:
+        trace("conversational_create_begin")
+        try:
+            from jarvis.memory.cognitive import CognitiveMemoryClient
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+            url = configured_memory_url()
+            if not url:
+                raise ValueError("memory_not_configured")
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                raise ValueError("memory_key_missing")
+            client = CognitiveMemoryClient(url, key)
+            if client.diagnose().get("status") != "COMPATIBLE":
+                raise ValueError("memory_contract_incompatible")
+            lifecycle = PersonalMemoryLifecycle(
+                client, MemoryOperationJournal(database_path()), url,
+            )
+            result = lifecycle.create(
+                content=self.pending.content, scope=self.pending.scope,
+                conversation_id=self.pending.conversation_id,
+                confirmation=self.pending.authorization,
+            )
+            payload = {
+                "action": "create",
+                "ok": result.get("status") == "CONFIRMED",
+                "status": result.get("status", "RESULT_UNKNOWN"),
+                "operationId": result.get("operation_id"),
+                "memoryId": result.get("memory_id"),
+                "scope": result.get("scope"),
+                "retryAutomatically": False,
+            }
+        except Exception as exc:
+            payload = {
+                "action": "create", "ok": False, "status": "NOT_CONFIRMED",
+                "error": type(exc).__name__, "retryAutomatically": False,
+            }
+        trace("conversational_create_end", ok=bool(payload["ok"]))
+        self.finishedMutation.emit(_json(payload))
+
+
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
 
