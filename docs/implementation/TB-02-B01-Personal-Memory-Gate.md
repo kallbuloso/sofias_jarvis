@@ -108,3 +108,21 @@ The exact UUID displayed in the preview is the remote target, not a
 permission token. Later implementation must still bind a one-use
 pending intent to the confirmed preview and **revalidate** before
 dispatching a mutation. The LLM must never authorize changes.
+
+## B-01b — Validação automatizada Windows (relato do proprietário)
+
+Após atualização `8965304..fe35025` pelo comando
+`git pull --ff-only origin feat/tb-02-memory-knowledge`:
+
+- `python -m pytest -q`: **189 passed in 6.01s**
+- `npm run build`: **PASS** — Vite 7.3.7, 559 módulos,
+  `built in 5.54s`
+- Alerta de chunk acima de 500 kB: aviso de otimização,
+  **não falha de build**
+
+**Estado:** validação de código/compilação B-01b = PASS.
+**Ainda pendente:** smoke humano de prévia de memória no desktop
+usando `/atualizar UUID | texto` e `/esquecer UUID` com a única
+ação `Fechar sem alterar`, sem mutação real; observar saída Qt
+e logs opcionais. Não considerar B-01b Product Done antes desse teste.
+Nenhuma alteração de memória real foi relatada nesta validação.
