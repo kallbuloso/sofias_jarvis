@@ -176,3 +176,90 @@ reinicialização automática para mascarar o defeito.
 
 Nenhum merge na `main`; TB-02 permanece `IN PROGRESS` por causa
 da estabilidade ainda não verificada.
+
+## Diagnóstico posterior — aborto nativo confirmado (2026-10-31)
+
+O proprietário executou o desktop com `-X faulthandler -u`.
+O processo foi abortado, com código de saída `3` no PowerShell.
+Saída observada:
+
+```text
+Fatal Python error: Aborted
+Thread ... (most recent call first):
+  app.py:86 in launch_desktop
+  main.py:393 in main
+QDxgiVSyncService not destroyed in time
+JARVIS_EXIT_CODE=3
+```
+
+A linha `app.py:86` estava no `QApplication.exec()`; não
+identifica a operação nativa responsável pelo abort. A mensagem
+`QDxgiVSyncService` sugere subsistema gráfico/Qt WebEngine,
+mas sua relação causal com o aborto **não foi provada**.
+
+A inspeção de `JarvisBridge` revelou um risco concreto de afinidade
+Qt: o handler de `QThread.finished` era conectado a uma lambda Python
+que alterava o estado do bridge e eventualmente agendava o fechamento
+da janela. Substituímos a conexão pelo slot
+`@Slot() JarvisBridge._on_thread_finished`, pertencente ao QObject
+da thread principal. A mudança remove esse caminho potencialmente
+inseguro; ainda não confirma que ele causava o crash.
+
+### Instrumentação segura adicionada
+
+Apenas com `JARVIS_DESKTOP_DIAGNOSTICS=1`, o desktop registra
+eventos não sensíveis de janela, QThread, worker e WebEngine em:
+
+`%LOCALAPPDATA%\JARVIS\desktop-lifecycle.jsonl`
+
+O diretório muda quando `JARVIS_DATA_DIR` estiver definido.
+Não registrar prompts, histórico, respostas, URLs ou credenciais.
+O log é append-only e síncrono para sobreviver a `abort` nativo.
+O sinal `renderProcessTerminated` e a mensagem Qt crítica podem
+auxiliar a diferenciar falha do renderer de saída do host.
+
+### Nova validação Windows
+
+```powershell
+git switch feat/tb-02-memory-knowledge
+git pull --ff-only origin feat/tb-02-memory-knowledge
+
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+.\.venv\Scripts\python.exe -m pytest -q
+
+$env:PYTHONFAULTHANDLER = "1"
+$env:JARVIS_DESKTOP_DIAGNOSTICS = "1"
+
+& .\.venv\Scripts\python.exe -X faulthandler -u main.py --desktop 2>&1 |
+    Tee-Object -FilePath .\tb02-desktop-diagnostic.log
+Write-Host "JARVIS_EXIT_CODE=$LASTEXITCODE"
+```
+
+Nesta etapa **não é necessário rebuild do Vite**: somente arquivos
+Python e documentação foram alterados. A suíte Windows anterior
+`168 passed in 4.69s` predatava a correção, que ainda precisa
+de validação.
+
+Ao terminar (crash ou encerramento normal), revisar:
+
+```powershell
+$logDir = if ($env:JARVIS_DATA_DIR) {
+    $env:JARVIS_DATA_DIR
+} else {
+    Join-Path $env:LOCALAPPDATA "JARVIS"
+}
+Get-Content (Join-Path $logDir "desktop-lifecycle.jsonl") -Tail 60
+```
+
+Interpretar a sequência com cautela:
+- `qt_about_to_quit` / `window_close_accepted` antes de sair
+  indica uma rota de fechamento solicitada/aceita.
+- `bridge_worker_done_received` sem `bridge_thread_finished` pode
+  apontar para janela temporal de teardown; não prova causa.
+- `webengine_renderer_terminated` detecta término do renderer,
+  mas não necessariamente de todo o processo Python.
+- Ausência de `qt_event_loop_exit` com `Fatal Python error: Aborted`
+  sugere término nativo antes da saída normal de `app.exec()`.
+
+**Aceite ainda bloqueado por estabilidade.** Não fazer merge na
+`main` nem iniciar TB-03 enquanto essa falha permanecer sem análise.
