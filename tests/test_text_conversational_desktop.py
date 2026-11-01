@@ -144,7 +144,15 @@ def test_mutating_and_scheduler_intents_are_not_executed(tmp_path, monkeypatch, 
     cid = db.create_conversation()
     worker = ReplyWorker(cid, "JARVIS faça a operação", "model", "PRIVATE",
                          conversational=True)
+    proposals = []
+    worker.createProposed.connect(lambda *args: proposals.append(args))
     worker.run()
+    assert len(proposals) == (1 if action == "memory_create" else 0)
+    if proposals:
+        assert proposals[0][0] == cid
+        assert json.loads(proposals[0][1]) == {
+            "content": "Prefiro teal.", "scope": None,
+        }
     result = db.list_messages(cid)[-1]
     assert result["status"] == "completed"
     if action == "memory_create":
