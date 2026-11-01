@@ -71,7 +71,7 @@ class MemoryOperationJournal:
                     or (confirmation.method != "user_direct_intent"
                         and confirmation.source_message_id is not None)
                     or (confirmation.method == "desktop_approved"
-                        and (kind != "create" or confirmation.conversation_id is None))
+                        and confirmation.conversation_id is None)
                     or (confirmation.method == "desktop_typed"
                         and (kind == "create" or confirmation.conversation_id is None))
                     or (confirmation.method == "cli_typed"
