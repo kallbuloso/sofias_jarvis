@@ -100,6 +100,41 @@ class PersonalMemoryLifecycle:
             ), confirmed,
         )
 
+    def resolve_preview(self, query: str, *, action: str, scopes: list[str]) -> dict:
+        """Resolve one current user-owned memory from natural language, read-only."""
+        if action not in {"supersede", "forget"}:
+            raise ValueError("invalid_personal_action")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("invalid_memory_target_query")
+        if (not isinstance(scopes, list) or not scopes
+                or any(scope not in {"global", "project:jarvis"} for scope in scopes)):
+            raise ValueError("invalid_memory_target_scopes")
+        hits = self.client.recall(
+            query=query.strip(), scopes=list(dict.fromkeys(scopes)),
+            top_k=5, include_superseded=False,
+        )
+        candidates: list[dict] = []
+        seen: set[str] = set()
+        for hit in hits:
+            memory = hit.get("memory") if isinstance(hit, dict) else None
+            memory_id = memory.get("memory_id") if isinstance(memory, dict) else None
+            if not isinstance(memory_id, str) or memory_id in seen:
+                continue
+            seen.add(memory_id)
+            if self.journal.owned_user_memory(memory_id, self.service_url) is None:
+                continue
+            if self.journal.has_unresolved_mutation(memory_id):
+                continue
+            try:
+                candidates.append(self.preview(memory_id, action=action))
+            except ValueError:
+                continue
+        if not candidates:
+            raise ValueError("memory_target_not_found")
+        if len(candidates) != 1:
+            raise ValueError("memory_target_ambiguous")
+        return candidates[0]
+
     def preview(self, memory_id: str, *, action: str) -> dict:
         if action not in {"supersede", "forget"}:
             raise ValueError("invalid_personal_action")
