@@ -153,3 +153,98 @@ def test_desktop_mutation_worker_journals_typed_consent(monkeypatch, tmp_path):
         "user-confirmation:" + pending.authorization.authorization_id
     )
     assert audit["confirmed_by_user_at"]
+
+
+def test_natural_create_offer_requires_separate_approval(monkeypatch, tmp_path):
+    prepare(monkeypatch, tmp_path)
+    from types import SimpleNamespace
+
+    bridge = JarvisBridge()
+    conversation_id = json.loads(bridge.createConversation())["id"]
+    bridge._worker = SimpleNamespace(
+        create_proposal={"content": "No projeto JARVIS prefiro Vuetify 3",
+                         "scope": "project:jarvis"},
+        routing_status="CLASSIFIED",
+    )
+    events = []
+    bridge.streamEvent.connect(lambda raw: events.append(json.loads(raw)))
+    bridge._on_done(conversation_id, "completed", "", "NOT_REQUESTED")
+    assert [event["type"] for event in events] == ["done", "create_proposal"]
+    offer = events[1]
+    assert offer["ok"] is True
+    assert offer["content"] == "No projeto JARVIS prefiro Vuetify 3"
+    assert offer["scope"] == "project:jarvis"
+    assert offer["conversationId"] == conversation_id
+    assert offer["authorizationToken"]
+    assert json.loads(bridge.cancelConversationalCreate())["status"] == "CANCELLED"
+    assert json.loads(bridge.confirmConversationalCreate(
+        offer["authorizationToken"], conversation_id, "project:jarvis",
+    ))["error"] == "approval_invalid_or_expired"
+    assert bridge.active is False
+
+
+def test_desktop_conversational_create_worker_confirms_journal_with_fake_service(
+        monkeypatch, tmp_path):
+    prepare(monkeypatch, tmp_path)
+    from jarvis.desktop.bridge import ConversationalCreateWorker
+    from jarvis.config import database_path
+    from jarvis.memory.journal import MemoryOperationJournal
+    from jarvis.memory.personal_confirmation import PersonalCreateGate
+
+    calls = []
+    class FakeService(FakeCognitive):
+        def create(self, *, memory_type, scope, content, provenance, idempotency_key):
+            calls.append((memory_type, scope, content, idempotency_key))
+            return {
+                "memory_id": str(uuid4()), "memory_type": memory_type,
+                "scope": scope, "content": content, "lifecycle": "active",
+                "provenance": dict(provenance),
+            }
+
+    monkeypatch.setattr(cognitive, "CognitiveMemoryClient", FakeService)
+    bridge = JarvisBridge()
+    conv = json.loads(bridge.createConversation())["id"]
+    gate = PersonalCreateGate()
+    token = gate.offer(content="Prefiro Vuetify 3", scope="project:jarvis",
+                       conversation_id=conv)
+    pending = gate.consume(token, conv, "project:jarvis")
+    worker = ConversationalCreateWorker(pending)
+    result_events = []
+    worker.finishedMutation.connect(lambda raw: result_events.append(json.loads(raw)))
+    worker.run()
+    assert len(result_events) == 1
+    result = result_events[0]
+    assert result["ok"] is True
+    assert result["status"] == "CONFIRMED"
+    assert result["action"] == "create"
+    assert len(calls) == 1
+    assert calls[0][0:3] == ("semantic", "project:jarvis", "Prefiro Vuetify 3")
+    journal = MemoryOperationJournal(database_path())
+    audit = journal.get(result["operationId"])
+    assert audit["memory_id"] == result["memoryId"]
+    assert audit["status"] == "confirmed"
+    assert audit["confirmation_method"] == "desktop_approved"
+    assert audit["confirmation_conversation_id"] == conv
+    assert audit["confirmation_ref"] == (
+        "user-confirmation:" + pending.authorization.authorization_id
+    )
+
+
+def test_create_gate_rejects_different_scope_and_unknown_conversation(monkeypatch, tmp_path):
+    prepare(monkeypatch, tmp_path)
+    bridge = JarvisBridge()
+    first = json.loads(bridge.createConversation())["id"]
+    token = bridge._create_gate.offer(
+        content="Teste descartável", scope="global", conversation_id=first,
+    )
+    other = str(uuid4())
+    assert json.loads(bridge.confirmConversationalCreate(
+        token, other, "global",
+    ))["ok"] is False
+    assert json.loads(bridge.confirmConversationalCreate(
+        token, first, "project:jarvis",
+    ))["error"] == "approval_invalid_or_expired"
+    assert json.loads(bridge.confirmConversationalCreate(
+        token, first, "global",
+    ))["error"] == "approval_invalid_or_expired"
+    assert not bridge.active
