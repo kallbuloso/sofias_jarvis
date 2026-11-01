@@ -86,3 +86,28 @@ def test_conversational_create_wrong_scope_conversation_and_expiry_fail_closed()
     gate.clear()
     with pytest.raises(ValueError, match="missing"):
         gate.consume(token, original, "global")
+
+def test_natural_desktop_mutation_approval_is_one_use_and_conversation_bound():
+    memory_id = str(uuid4())
+    conversation_id = str(uuid4())
+    gate = PersonalMutationGate(now=lambda: 100.0)
+    token, _ = gate.offer(
+        "forget", {"memory_id": memory_id, "source_ref": "origin"},
+        "", conversation_id,
+    )
+    pending = gate.approve(token, conversation_id)
+    assert pending.action == "forget"
+    assert pending.authorization.method == "desktop_approved"
+    assert pending.authorization.target_memory_id == memory_id
+    assert pending.authorization.conversation_id == conversation_id
+    with pytest.raises(ValueError):
+        gate.approve(token, conversation_id)
+
+    other_token, _ = gate.offer(
+        "supersede", {"memory_id": memory_id, "source_ref": "origin"},
+        "nova informação", conversation_id,
+    )
+    with pytest.raises(ValueError, match="wrong_conversation"):
+        gate.approve(other_token, str(uuid4()))
+    with pytest.raises(ValueError):
+        gate.approve(other_token, conversation_id)
