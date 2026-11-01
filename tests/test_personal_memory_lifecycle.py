@@ -427,12 +427,13 @@ def test_natural_target_resolution_uses_only_owned_memory(lifecycle):
     assert preview["content"] == "Prefiro teal"
 
 
-def test_natural_target_resolution_fails_closed_when_ambiguous(lifecycle):
+def test_natural_target_resolution_uses_best_owned_hit_and_still_requires_preview(lifecycle):
+    first = owned(lifecycle.journal, lifecycle.client)
     owned(lifecycle.journal, lifecycle.client)
-    owned(lifecycle.journal, lifecycle.client)
-    with pytest.raises(ValueError, match="memory_target_ambiguous"):
-        lifecycle.resolve_preview(
-            "esqueça minha preferência",
-            action="forget", scopes=["global"],
-        )
+    preview = lifecycle.resolve_preview(
+        "esqueça minha preferência",
+        action="forget", scopes=["global"],
+    )
+    assert preview["memory_id"] == first
+    assert preview["content"] == "Prefiro teal"
 
