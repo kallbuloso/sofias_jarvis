@@ -154,3 +154,36 @@ conversation-friendly confirmation is still an acknowledged gap.
 The closed router currently classifies the CURRENT utterance,
 not a resolved multi-turn memory target; real assistant-like
 disambiguation and scope/consent management are future increments.
+
+## Owner natural-text desktop smoke — PASS (2026-11-01)
+
+Owner reports that all four previously requested Windows desktop
+checks were run. The provided screenshot independently shows:
+
+- In a normal text turn, the user asked which color they prefer for
+  graphical interfaces. JARVIS answered **teal** and attributed it to
+  Sofias Memory (retrieval, no manual switch).
+- A request "amanhã às nove me lembre de ligar para o fornecedor"
+  was identified as a future scheduling intent; JARVIS correctly
+  stated that no scheduler/notifier was available and no reminder
+  was scheduled.
+- A natural "JARVIS, lembre que neste projeto prefiro Vuetify 3"
+  request was understood as a memory action but explicitly **not
+  written** in the first increment.
+- The two manual Memory/Knowledge toggles and selection controls
+  are absent from the screenshot; each conversation now has an
+  **Excluir** affordance.
+
+Owner additionally confirmed all four checks, including
+natural Knowledge routing and safe disposal of a test conversation.
+This is **owner-reported** for results not independently visible in
+the provided screenshot, not a fabricated observation.
+
+The earlier same-build automated gate is **235 passed in 8.93 s**,
+8 targeted passed in 1.14 s, and Vite build successful in 5.35 s.
+**Text Increment 1 accepted PASS.**
+
+Product gap acknowledged: natural Create was only classified, not
+executed. The next increment connects the explicit Create proposal
+to a one-use, separately authorized journalled write, still without
+voice, scheduler, natural Update/Forget or merge to main.
