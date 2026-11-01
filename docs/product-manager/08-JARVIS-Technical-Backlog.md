@@ -298,3 +298,25 @@ por opt-in para diagnóstico de regressão.
 pendente. Smoke aprovado não equivale automaticamente a merge nem
 a autorização do TB-03. Fonte:
 `docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
+
+
+## 12. Revisão final de aceite TB-02 — findings (2026-10-31)
+
+A revisão consolidada foi publicada em
+`docs/implementation/TB-02-Final-Acceptance-Review.md`.
+
+**PASS**: conectividade, Create/Get/Recall, Supersede/Forget de
+memórias descartáveis, Knowledge Retrieval real com referências,
+chat CLI e desktop ON/OFF, 172 testes Windows, Vite build e smoke
+Qt com 3 turnos/saída 0.
+
+**Ainda não declarar Product Done**: B-01 (mutações cognitivas
+pessoais `Supersede/Forget` ausentes da experiência conversacional);
+B-02 (referências de Knowledge efêmeras, não associadas de forma
+durável à mensagem). Há limites de prova para indisponibilidade real,
+conflitos multi-documento e causa-raiz definitiva do antigo
+`QDxgiVSyncService`.
+
+**Próximo passo proposto:** finalização restrita dentro de TB-02,
+sujeita à decisão do proprietário sobre os findings. Sem merge na
+`main`, sem TB-03.
