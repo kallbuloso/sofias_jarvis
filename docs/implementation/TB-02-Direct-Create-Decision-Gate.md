@@ -166,3 +166,41 @@ Then send a second ordinary text with the button. If either still
 fails, report whether Enviar is disabled, whether a chat is selected,
 the OpenAI model field, any on-screen warning and lifecycle logs;
 do not blindly retry mutating requests.
+
+## Root cause: missing OpenAI model after desktop restart
+
+The owner then sent a new desktop screenshot after the composer fix.
+It shows **Modelo OpenAI empty** (`Digite o modelo habilitado`) and a
+visible warning `Informe o modelo OpenAI antes de enviar a mensagem.`
+with the unsent `Oi JARVIS!` draft preserved. Thus the previous silent
+submission failure is now explained by missing model configuration;
+there is **no evidence from this screenshot** of failed Memory,
+Knowledge, SQLite or provider execution.
+
+Audited `JarvisBridge.bootstrap()`: the only model source had been
+`os.getenv("JARVIS_MODEL", "")`. Model names typed in the UI were
+ephemeral and lost on restart unless the OS environment was explicitly
+set. This was an actual persistence/design bug, distinct from the
+earlier no-selected-conversation bug.
+
+Feature-branch repair (owner verification pending):
+- New `jarvis.desktop.model_preferences` loads/saves a small local
+  `desktop-preferences.json` in the established JARVIS data directory.
+  Names are validated and saved via atomic replace, **without keys**.
+- The Qt bootstrap uses `JARVIS_MODEL` when explicitly defined, then
+  the last saved model otherwise. Corrupt/absent preferences fail safe.
+- After an accepted desktop message dispatch, the typed model choice
+  is saved. A local settings write problem is logged by error class,
+  not allowed to abort an already-started reply.
+- No SQLite migration or remote Sofias Memory operation is involved.
+- A regression test module covers restart persistence, override
+  precedence, malformed input, sensitive-data exclusion and bootstrap.
+
+**Owner manual recovery now:** enter the previously working model
+`gpt-6-luna` once, send a harmless chat message and restart the
+desktop. On subsequent starts the model field should remain populated.
+Do not attempt Memory writes until ordinary chat submission and
+restart persistence have been tested.
+
+Await fresh Windows pytest and Vite build. Do not claim either has
+passed on this revision. Keep `main` intact.
