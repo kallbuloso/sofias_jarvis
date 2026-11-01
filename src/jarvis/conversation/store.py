@@ -301,8 +301,9 @@ class SQLiteConversationStore:
                 (timestamp, message_id),
             )
 
-    def end_assistant_message(self, message_id: str, *, successful: bool) -> None:
-        status = "completed" if successful else "failed"
+    def end_assistant_message(self, message_id: str, *, successful: bool,
+                              interrupted: bool = False) -> None:
+        status = "interrupted" if interrupted else ("completed" if successful else "failed")
         with self._connection() as db:
             updated = db.execute(
                 "UPDATE messages SET status = ?, updated_at = ? "
