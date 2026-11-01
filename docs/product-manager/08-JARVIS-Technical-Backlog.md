@@ -440,3 +440,28 @@ collection `214` based on 202 previous + 12 new parametrized
 cases (not verified locally). See
 `docs/implementation/TB-02-B02-Message-Evidence.md`.
 No TB-03 implementation, no `main` merge.
+
+## 18. TB-02 — B-02a accepted by human desktop smoke (2026-11-01)
+
+Human owner provided screenshot and confirmed complete B-02a behavior:
+`Consulta Knowledge: RESULTS_FOUND`, a real ADR-0001 source,
+verified `source_id/document_id/chunk_id` displayed within the exact
+assistant response; same references remained after switching between
+conversations and after restarting JARVIS; desktop shutdown was normal.
+This followed pre-v5 SQLite backup, **214 passed in 8.38s** and successful
+Vite build (5.23s). **B-02a = PASS**.
+
+TB-02 broader readiness remains subject to final Product Done
+review and explicit approval, with two acceptance distinctions:
+(1) personal Create remains CLI-supervised and is not yet exposed
+as conversational `/lembrar` on desktop (unlike desktop Supersede/Forget);
+the PRD-02 FR-010/SPEC-04 S04-AC01 user-journey interpretation
+must not be silently watered down;
+(2) a dedicated owner-operated controlled degraded-service smoke
+has not yet been observed (SPEC-04 S04-AC08).
+Contradictory multi-source Knowledge evaluation is also outside the
+single-ADR pilot and should not be claimed as validated.
+
+See `docs/implementation/TB-02-Final-Acceptance-Review.md` §6
+and `docs/implementation/TB-02-B02-Message-Evidence.md`.
+The branch remains isolated; **no merge** or TB-03 work was authorized.
