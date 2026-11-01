@@ -22,16 +22,17 @@ class MemoryOperationJournal:
         self, operation_id: str, service_url: str, payload: dict, *,
         kind: str = "create", target_memory_id: str | None = None,
     ) -> None:
-        """Record intent before network effects; restrict test mutations to local allowlist."""
+        """Record intent before network effects; restrict test mutations and user-owned targets independently."""
         operation_id = str(UUID(operation_id))
         service_url = validate_memory_url(service_url)
         if payload.get("idempotency_key") != operation_id:
             raise ValueError("idempotency_key_mismatch")
-        if kind not in {"create", "test_create", "test_supersede", "test_forget"}:
+        if kind not in {"create", "test_create", "test_supersede", "test_forget",
+                        "user_supersede", "user_forget"}:
             raise ValueError("invalid_operation_kind")
         if kind in {"create", "test_create"} and target_memory_id is not None:
             raise ValueError("unexpected_target")
-        if kind in {"test_supersede", "test_forget"}:
+        if kind in {"test_supersede", "test_forget", "user_supersede", "user_forget"}:
             if target_memory_id is None:
                 raise ValueError("test_target_required")
             target_memory_id = str(UUID(target_memory_id))
@@ -44,7 +45,7 @@ class MemoryOperationJournal:
         serialized = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         now = _now()
         with self._store._connection() as db:
-            if target_memory_id is not None:
+            if kind in {"test_supersede", "test_forget"} and target_memory_id is not None:
                 row = db.execute(
                     "SELECT service_url,lifecycle,marker FROM tb02_test_memories WHERE memory_id=?",
                     (target_memory_id,),
@@ -57,6 +58,26 @@ class MemoryOperationJournal:
                     raise ValueError("test_target_mismatch")
                 if kind == "test_supersede" and payload.get("provenance", {}).get("source_ref") != row["marker"]:
                     raise ValueError("test_marker_mismatch")
+            if kind in {"user_supersede", "user_forget"}:
+                owned = db.execute(
+                    "SELECT id FROM cognitive_write_operations "
+                    "WHERE memory_id=? AND service_url=? AND status='confirmed' "
+                    "AND operation_kind IN ('create','user_supersede') "
+                    "ORDER BY updated_at DESC LIMIT 1",
+                    (target_memory_id, service_url),
+                ).fetchone()
+                if owned is None:
+                    raise ValueError("target_not_owned_user_memory")
+                if payload.get("memory_id") != target_memory_id:
+                    raise ValueError("user_target_mismatch")
+                if kind == "user_supersede":
+                    provenance = payload.get("provenance", {})
+                    if (provenance.get("origin_kind") != "user_asserted"
+                            or provenance.get("source_system") != "jarvis"
+                            or provenance.get("source_ref") != f"memory-operation:{operation_id}"):
+                        raise ValueError("invalid_user_supersede_provenance")
+                elif set(payload) != {"idempotency_key", "memory_id"}:
+                    raise ValueError("invalid_user_forget_payload")
             db.execute(
                 "INSERT INTO cognitive_write_operations "
                 "(id,service_url,payload_json,status,memory_id,error_code,created_at,updated_at,"
@@ -122,6 +143,26 @@ class MemoryOperationJournal:
             ).fetchone()
         return dict(row) if row else None
 
+
+    def owned_user_memory(self, memory_id: str, service_url: str) -> dict | None:
+        """Owner proof: confirmed personal Create/Supersede in this installation.
+
+        Test memories and foreign memories are intentionally ineligible.
+        """
+        memory_id = str(UUID(memory_id))
+        service_url = validate_memory_url(service_url)
+        with self._store._connection() as db:
+            row = db.execute(
+                "SELECT id, memory_id, service_url, operation_kind FROM cognitive_write_operations "
+                "WHERE memory_id=? AND service_url=? AND status='confirmed' "
+                "AND operation_kind IN ('create','user_supersede') "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (memory_id, service_url),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def has_unresolved_mutation(self, memory_id: str) -> bool:
+        return self.has_unresolved_test_mutation(memory_id)
 
     def test_item(self, memory_id: str) -> dict | None:
         memory_id = str(UUID(memory_id))
