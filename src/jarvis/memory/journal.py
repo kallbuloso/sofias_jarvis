@@ -62,8 +62,14 @@ class MemoryOperationJournal:
             if (expected_action is None or confirmation.action != expected_action
                     or confirmation.target_memory_id != target_memory_id
                     or confirmation.method not in {
-                        "desktop_typed", "desktop_approved", "cli_typed"
+                        "desktop_typed", "desktop_approved", "cli_typed",
+                        "user_direct_intent"
                     }
+                    or (confirmation.method == "user_direct_intent"
+                        and (kind != "create" or confirmation.conversation_id is None
+                             or confirmation.source_message_id is None))
+                    or (confirmation.method != "user_direct_intent"
+                        and confirmation.source_message_id is not None)
                     or (confirmation.method == "desktop_approved"
                         and (kind != "create" or confirmation.conversation_id is None))
                     or (confirmation.method == "desktop_typed"
@@ -71,13 +77,30 @@ class MemoryOperationJournal:
                     or (confirmation.method == "cli_typed"
                         and confirmation.conversation_id is not None)):
                 raise ValueError("confirmation_does_not_match_operation")
-            confirmation_ref = "user-confirmation:" + str(UUID(confirmation.authorization_id))
+            if confirmation.method == "user_direct_intent":
+                # Source message's UUID is a stable, non-replayable operation
+                # authority key across process restarts; never use model IDs.
+                confirmation_ref = (
+                    "user-message:" + str(UUID(confirmation.source_message_id))
+                )
+            else:
+                confirmation_ref = (
+                    "user-confirmation:" + str(UUID(confirmation.authorization_id))
+                )
             confirmation_method = confirmation.method
             confirmation_conversation = confirmation.conversation_id
             confirmed_by_user_at = _now()
         serialized = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         now = _now()
         with self._store._connection() as db:
+            if confirmation is not None and confirmation.method == "user_direct_intent":
+                row = db.execute(
+                    "SELECT 1 FROM messages WHERE id=? AND conversation_id=? "
+                    "AND role='user' AND status='completed'",
+                    (confirmation.source_message_id, confirmation.conversation_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("direct_authorization_source_not_found")
             if kind in {"test_supersede", "test_forget"} and target_memory_id is not None:
                 row = db.execute(
                     "SELECT service_url,lifecycle,marker FROM tb02_test_memories WHERE memory_id=?",
