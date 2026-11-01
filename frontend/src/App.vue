@@ -374,34 +374,63 @@ async function sendMessage() {
   const text = draft.value.trim()
   if (!ready.value || busy.value || memoryPreviewBusy.value ||
       memoryMutationBusy.value || createDialog.value || createBusy.value ||
-      !selected.value || !text) return
-  if (/^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)) {
-    await previewMemoryCommand(text)
+      !text) return
+
+  const legacyMutation = /^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)
+  if (!legacyMutation && !model.value.trim()) {
+    warning.value = 'Informe o modelo OpenAI antes de enviar a mensagem.'
     return
   }
-  if (!model.value.trim()) return
+
+  // Acquire the send lock before awaiting Qt: Ctrl+Enter and click must not
+  // create two conversations or dispatch the same message twice.
+  busy.value = true
   warning.value = ''
   memoryNotice.value = ''
   knowledgeNotice.value = ''
-  busy.value = true
-  draft.value = ''
-  const conversationId = selected.value
-  messages.value.push({ role: 'user', content: text, status: 'completed' })
-  messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
-  scrollToBottom()
+  let conversationId = selected.value
+
   try {
+    // Deleting the last conversation intentionally leaves the sidebar empty.
+    // The next actual send creates a conversation, not an idle startup.
+    if (!conversationId) {
+      const created = await call('createConversation')
+      if (!created.ok || !created.id) {
+        throw new Error('conversation_creation_failed')
+      }
+      conversationId = created.id
+      selected.value = conversationId
+      messages.value = []
+      await refreshConversations()
+    }
+
+    if (legacyMutation) {
+      busy.value = false
+      await previewMemoryCommand(text)
+      return
+    }
+
+    draft.value = ''
+    messages.value.push({ role: 'user', content: text, status: 'completed' })
+    messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
+    scrollToBottom()
     const result = await call('sendConversationalMessage',
       conversationId, text, model.value.trim())
     if (!result.ok) {
       busy.value = false
       draft.value = text
-      warning.value = 'Envio recusado: ' + result.error
-      if (selected.value === conversationId) await openConversation(conversationId)
+      warning.value = 'Envio recusado: ' + (result.error || 'unknown')
+      if (selected.value === conversationId) {
+        await openConversation(conversationId, true)
+      }
     }
   } catch {
     busy.value = false
-    warning.value = 'Falha de comunicação com o Core.'
-    if (selected.value === conversationId) await openConversation(conversationId)
+    draft.value = text
+    warning.value = 'Não foi possível enviar. Confira a conexão com o Core e a conversa selecionada.'
+    if (conversationId && selected.value === conversationId) {
+      await openConversation(conversationId, true).catch(() => {})
+    }
   }
 }
 
@@ -476,7 +505,10 @@ onMounted(async () => {
             {{ warning }}
           </div>
           <div class="history">
-            <div v-if="!messages.length" class="empty">Conversa pronta. Envie sua primeira mensagem.</div>
+            <div v-if="!messages.length" class="empty">
+              {{ selected ? 'Conversa pronta. Envie sua primeira mensagem.' :
+                'Escreva sua mensagem. O JARVIS criará a conversa ao enviar.' }}
+            </div>
             <div v-for="(m, i) in messages" :key="m.id || i"
               class="message" :class="m.role === 'user' ? 'mine' : 'assistant'">
               <div class="speaker">{{ m.role === 'user' ? 'Você' : 'JARVIS' }}</div>
@@ -533,9 +565,8 @@ onMounted(async () => {
               label="Mensagem" :disabled="busy || memoryPreviewBusy || memoryMutationBusy || createDialog || createBusy || !ready"
               @keydown.ctrl.enter.prevent="sendMessage"/>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
-              :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy || memoryMutationBusy ||
-                createDialog || createBusy ||
-                (!model.trim() && !draft.trim().startsWith('/'))"
+               :disabled="!ready || !draft.trim() || busy || memoryPreviewBusy || memoryMutationBusy ||
+                createDialog || createBusy"
               @click="sendMessage">Enviar</v-btn>
           </div>
         </div>
