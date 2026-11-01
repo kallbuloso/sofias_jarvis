@@ -116,6 +116,22 @@ def test_knowledge_worker_emits_verified_references_without_history_leak(tmp_pat
     assert evidence["queryId"] == QUERY_ID
     assert evidence["references"][0]["chunk_id"] == CHUNK_ID
     assert evidence["references"][0]["document_id"] == DOCUMENT_ID
+    assert evidence["evidencePersistence"] == "SAVED"
+    saved_messages = SQLiteConversationStore(tmp_path / "jarvis.sqlite3").list_messages(cid)
+    assistant = saved_messages[-1]
+    assert assistant["role"] == "assistant"
+    assert assistant["status"] == "completed"
+    assert evidence["assistantMessageId"] == assistant["id"]
+    attached = assistant["knowledgeEvidence"]
+    assert attached["knowledgeStatus"] == "RESULTS_FOUND"
+    assert attached["queryId"] == QUERY_ID
+    assert attached["dataset"] == "jarvis-knowledge"
+    assert attached["references"] == [{
+        "source_name": "JARVIS ADR-0001",
+        "source_id": SOURCE_ID, "document_id": DOCUMENT_ID, "chunk_id": CHUNK_ID,
+    }]
+    assert "quote" not in attached["references"][0]
+    assert "url" not in attached["references"][0]
     assert "PRIVATE-" not in json.dumps(evidence)
     assert calls == [
         ("list", {"limit": 100, "offset": 0}),
