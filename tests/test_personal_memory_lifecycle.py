@@ -8,7 +8,7 @@ import pytest
 
 from jarvis.memory.cognitive import CognitiveMemoryError
 from jarvis.memory.journal import MemoryOperationJournal
-from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+from jarvis.memory.personal_confirmation import PersonalMutationAuthorization, PersonalCreateGate
 from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
 
 URL = "https://memory.example"
@@ -21,6 +21,19 @@ class FakeClient:
         self.memories = {}
         self.calls = []
         self.failure = None
+
+    def create(self, *, memory_type, scope, content, provenance, idempotency_key):
+        self.calls.append(("create", scope, idempotency_key))
+        if self.failure:
+            raise CognitiveMemoryError(self.failure)
+        memory_id = str(uuid4())
+        memory = {
+            "memory_id": memory_id, "memory_type": memory_type,
+            "scope": scope, "content": content,
+            "lifecycle": "active", "provenance": dict(provenance),
+        }
+        self.memories[memory_id] = memory
+        return dict(memory)
 
     def get(self, memory_id):
         self.calls.append(("get", memory_id))
@@ -229,3 +242,70 @@ def test_confirmation_survives_payload_scrubbing_and_restart(lifecycle):
         body = db.execute("SELECT payload_json FROM cognitive_write_operations WHERE id=?",
                           (result["operation_id"],)).fetchone()
     assert body[0] is None
+
+
+def test_conversational_create_persists_approved_scope_conversation_and_audit(lifecycle):
+    conversation = str(uuid4())
+    gate = PersonalCreateGate()
+    token = gate.offer(content="No projeto JARVIS prefiro Vuetify 3",
+                       scope="project:jarvis", conversation_id=conversation)
+    pending = gate.consume(token, conversation, "project:jarvis")
+    result = lifecycle.create(
+        content=pending.content, scope=pending.scope,
+        conversation_id=pending.conversation_id, confirmation=pending.authorization,
+    )
+    assert result["status"] == "CONFIRMED"
+    assert result["memory_type"] == "semantic"
+    memory = lifecycle.client.memories[result["memory_id"]]
+    assert memory["content"] == pending.content
+    assert memory["provenance"]["conversation_uuid"] == conversation
+    assert memory["provenance"]["source_ref"] == (
+        "memory-operation:" + result["operation_id"]
+    )
+    audit = lifecycle.journal.get(result["operation_id"])
+    assert audit["status"] == "confirmed"
+    assert audit["confirmation_method"] == "desktop_approved"
+    assert audit["confirmation_conversation_id"] == conversation
+    assert audit["confirmation_ref"] == (
+        "user-confirmation:" + pending.authorization.authorization_id
+    )
+    assert memory["provenance"]["confirmation_ref"] == audit["confirmation_ref"]
+    assert lifecycle.journal.owned_user_memory(result["memory_id"], URL)
+    with sqlite3.connect(lifecycle.journal._store.path) as db:
+        assert db.execute(
+            "SELECT payload_json FROM cognitive_write_operations WHERE id=?",
+            (result["operation_id"],),
+        ).fetchone()[0] is None
+
+
+def test_conversational_create_refuses_unapproved_or_sensitive_changes(lifecycle):
+    conv = str(uuid4())
+    valid = PersonalMutationAuthorization.from_desktop_approval(
+        action="create", conversation_id=conv,
+    )
+    with pytest.raises(ValueError, match="approval"):
+        lifecycle.create(content="test", scope="global",
+                         conversation_id=str(uuid4()), confirmation=valid)
+    with pytest.raises(ValueError, match="sensitive"):
+        lifecycle.create(content="Minha senha: 12345678", scope="global",
+                         conversation_id=conv, confirmation=valid)
+    with pytest.raises(ValueError, match="scope"):
+        lifecycle.create(content="test", scope="project:foreign",
+                         conversation_id=conv, confirmation=valid)
+    assert not lifecycle.client.calls
+
+
+def test_conversational_create_remote_unknown_never_retries(lifecycle):
+    conv = str(uuid4())
+    consent = PersonalMutationAuthorization.from_desktop_approval(
+        action="create", conversation_id=conv,
+    )
+    lifecycle.client.failure = "RESULT_UNKNOWN"
+    outcome = lifecycle.create(content="Preferência de teste", scope="global",
+                               conversation_id=conv, confirmation=consent)
+    assert outcome["status"] == "RESULT_UNKNOWN"
+    assert outcome["retry_automatically"] is False
+    audit = lifecycle.journal.get(outcome["operation_id"])
+    assert audit["status"] == "unknown"
+    assert audit["confirmation_method"] == "desktop_approved"
+    assert sum(c[0] == "create" for c in lifecycle.client.calls) == 1
