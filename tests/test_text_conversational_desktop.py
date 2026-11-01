@@ -147,22 +147,12 @@ def test_mutating_and_scheduler_intents_are_not_executed(tmp_path, monkeypatch, 
     proposals = []
     worker.createProposed.connect(lambda *args: proposals.append(args))
     worker.run()
-    assert len(proposals) == (1 if action == "memory_create" else 0)
-    if proposals:
-        assert proposals[0][0] == cid
-        assert json.loads(proposals[0][1]) == {
-            "content": "Prefiro teal.", "scope": None,
-        }
+    assert proposals == []  # Model classification cannot authorize a generic request.
     result = db.list_messages(cid)[-1]
     assert result["status"] == "completed"
-    if action == "memory_create":
-        assert worker.create_proposal == {
-            "content": "Prefiro teal.", "scope": None,
-        }
-        assert "Ainda não gravei" in result["content"]
-    else:
-        assert worker.create_proposal is None
-        assert "não" in result["content"].lower() or "Nenhuma" in result["content"]
+    assert worker.create_proposal is None
+    assert worker.direct_create is None
+    assert "não" in result["content"].lower() or "Nenhuma" in result["content"]
     assert memory_calls == knowledge_calls == []
     assert [x["stream"] for x in calls] == [False]
 
