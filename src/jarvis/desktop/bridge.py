@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from jarvis.adapters.openai_responses import OpenAIResponsesAdapter
 from jarvis.config import database_path
+from jarvis.desktop.diagnostics import trace
 from jarvis.conversation.runtime import ConversationRuntime
 from jarvis.conversation.store import SQLiteConversationStore
 from jarvis.secrets.windows import WindowsCredentialStore
@@ -43,6 +44,8 @@ class ReplyWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        trace("reply_worker_begin", memory=self.memory_scope is not None,
+              knowledge=self.knowledge_dataset is not None)
         result = "completed"
         error_code = ""
         memory_provider = None
@@ -144,6 +147,9 @@ class ReplyWorker(QObject):
             self.api_key = ""
             memory_key = None
             knowledge_key = None
+            trace("reply_worker_end", result=result, error_class=error_code,
+                  memory_status=memory_status,
+                  knowledge=self.knowledge_dataset is not None)
             self.done.emit(self.conversation_id, result, error_code, memory_status)
 
 class JarvisBridge(QObject):
@@ -246,6 +252,8 @@ class JarvisBridge(QObject):
         memory_scope: str | None,
         knowledge_dataset: str | None,
     ) -> str:
+        trace("bridge_dispatch_requested", worker_active=self.active,
+              memory=memory_scope is not None, knowledge=knowledge_dataset is not None)
         if self.active or self._closing:
             return _json({"ok": False, "error": "busy"})
         if not model.strip() or not prompt.strip():
@@ -269,14 +277,21 @@ class JarvisBridge(QObject):
         self._worker = worker
         self._thread = thread
         thread.started.connect(worker.run)
+        thread.started.connect(self._on_thread_started)
         worker.delta.connect(self._on_delta)
         worker.done.connect(self._on_done)
         worker.knowledgeDone.connect(self._on_knowledge_done)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(self._on_thread_finished)
+        trace("bridge_thread_starting")
         thread.start()
+        trace("bridge_thread_started_request")
         return _json({"ok": True, "conversationId": conversation_id})
+
+    @Slot()
+    def _on_thread_started(self) -> None:
+        trace("bridge_thread_started")
 
     @Slot(str, str)
     def _on_delta(self, conversation_id: str, delta: str) -> None:
@@ -304,6 +319,7 @@ class JarvisBridge(QObject):
     @Slot(str, str, str, str)
     def _on_done(self, conversation_id: str, result: str, error_code: str,
                  memory_status: str) -> None:
+        trace("bridge_worker_done_received", result=result, error_class=error_code)
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
@@ -313,6 +329,7 @@ class JarvisBridge(QObject):
     @Slot()
     def _on_thread_finished(self) -> None:
         """QThread.finished is delivered to this bridge on its GUI thread."""
+        trace("bridge_thread_finished", in_gui_thread=QThread.currentThread() == self.thread())
         thread = self._thread
         if thread is None:
             return
@@ -323,6 +340,7 @@ class JarvisBridge(QObject):
             QTimer.singleShot(0, self._window.close)
 
     def request_shutdown(self) -> None:
+        trace("bridge_shutdown_requested", worker_active=self.active)
         self._closing = True
         if self._worker is not None:
             self._worker.cancelled.set()
