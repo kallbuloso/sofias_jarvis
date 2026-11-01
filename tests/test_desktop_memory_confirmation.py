@@ -86,3 +86,66 @@ def test_cancelled_preview_has_no_mutation(monkeypatch, tmp_path):
     assert json.loads(bridge.cancelPendingPersonalMutation())["status"] == "CANCELLED"
     assert json.loads(bridge.confirmPersonalMutation(token, phrase, conv))["ok"] is False
     assert not bridge.active
+
+
+def test_desktop_mutation_worker_journals_typed_consent(monkeypatch, tmp_path):
+    prepare(monkeypatch, tmp_path)
+    from jarvis.desktop.bridge import MemoryMutationWorker
+    from jarvis.config import database_path
+    from jarvis.memory.journal import MemoryOperationJournal
+    from jarvis.memory.personal_confirmation import PersonalMutationGate
+
+    journal = MemoryOperationJournal(database_path())
+    source_op = str(uuid4())
+    memory_id = str(uuid4())
+    source_ref = "memory-operation:" + source_op
+    journal.prepare(source_op, "https://memory.example", {
+        "idempotency_key": source_op, "content": "Laranja",
+        "memory_type": "semantic", "scope": "project:jarvis",
+        "provenance": {"origin_kind": "user_asserted",
+                       "source_system": "jarvis", "source_ref": source_ref},
+    })
+    journal.claim(source_op)
+    journal.resolve(source_op, status="confirmed", memory_id=memory_id)
+    record = {
+        "memory_id": memory_id, "content": "Laranja",
+        "memory_type": "semantic", "scope": "project:jarvis",
+        "lifecycle": "active",
+        "provenance": {"origin_kind": "user_asserted",
+                       "source_system": "jarvis", "source_ref": source_ref},
+    }
+    calls = []
+
+    class FakeService(FakeCognitive):
+        def get(self, target):
+            calls.append("get")
+            assert target == memory_id
+            return dict(record)
+
+        def forget(self, target, *, idempotency_key):
+            calls.append("forget")
+            assert target == memory_id
+            assert idempotency_key
+            return {**record, "content": None, "scope": None, "lifecycle": "forgotten"}
+
+    monkeypatch.setattr(cognitive, "CognitiveMemoryClient", FakeService)
+    conversation_id = str(uuid4())
+    gate = PersonalMutationGate()
+    preview = {**record, "source_ref": source_ref}
+    token, phrase = gate.offer("forget", preview, "", conversation_id)
+    pending = gate.consume(token, phrase, conversation_id)
+    worker = MemoryMutationWorker(pending)
+    results = []
+    worker.finishedMutation.connect(lambda raw: results.append(json.loads(raw)))
+    worker.run()
+    assert results[0]["ok"] is True
+    assert results[0]["status"] == "CONFIRMED"
+    assert calls == ["get", "forget"]
+    audit = journal.get(results[0]["operationId"])
+    assert audit["status"] == "confirmed"
+    assert audit["confirmation_method"] == "desktop_typed"
+    assert audit["confirmation_conversation_id"] == conversation_id
+    assert audit["confirmation_ref"] == (
+        "user-confirmation:" + pending.authorization.authorization_id
+    )
+    assert audit["confirmed_by_user_at"]
