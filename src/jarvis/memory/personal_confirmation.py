@@ -20,6 +20,22 @@ class PersonalMutationAuthorization:
     target_memory_id: str | None
     method: str
     conversation_id: str | None
+    source_message_id: str | None = None
+
+    @classmethod
+    def from_explicit_user_message(
+        cls, *, action: str, conversation_id: str, message_id: str,
+    ):
+        """Direct authorization requires proof of a persisted user's request.
+
+        The Core separately validates the exact original content and policy.
+        """
+        if action != "create":
+            raise ValueError("user_direct_intent_create_only")
+        return cls(
+            str(uuid4()), "create", None, "user_direct_intent",
+            str(UUID(conversation_id)), str(UUID(message_id)),
+        )
 
     @classmethod
     def from_desktop_approval(cls, *, action: str, conversation_id: str):
