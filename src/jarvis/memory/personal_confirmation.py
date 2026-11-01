@@ -1,7 +1,8 @@
-"""Ephemeral, one-use authorization gate for user-confirmed memory mutation.
+"""Scoped receipts for explicit direct Create and separately confirmed mutations.
 
-An LLM, source document, command preview or UI button cannot perform a
-mutation until a second, exact typed authorization is validated.
+An LLM, source document, or tool result never grants authority. Direct
+low-risk Create needs the original user's persisted explicit request;
+Supersede/Forget retain their separate, one-use typed authorization.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 
 @dataclass(frozen=True)
 class PersonalMutationAuthorization:
-    """Local evidence of verified typed consent; never contains the phrase/token."""
+    """Local evidence of an explicit owner request or separate approval."""
     authorization_id: str
     action: str
     target_memory_id: str | None
