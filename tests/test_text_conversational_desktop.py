@@ -72,7 +72,7 @@ def environment(monkeypatch, tmp_path, action, *, route_failure=False):
         def list_datasets(self, **kwargs):
             knowledge_calls.append("list")
             return {"items": [{"dataset_id": _DATASET_ID, "slug": "jarvis-knowledge",
-                                "status": "active", "name": "JARVIS"}], "total": 1}
+                                "status": "active", "name": "JARVIS Knowledge"}], "total": 1}
         def query_chunks(self, **kwargs):
             knowledge_calls.append("query")
             return {"status": "RESULTS_FOUND", "query_id": _QUERY_ID,
@@ -99,7 +99,15 @@ def test_natural_text_knowledge_query_retrieves_sources_without_switch(tmp_path,
     cid = db.create_conversation()
     worker = ReplyWorker(cid, "Qual arquitetura do ADR-0001?", "model", "PRIVATE",
                          conversational=True)
+    done_events, knowledge_events = [], []
+    worker.done.connect(lambda *args: done_events.append(args))
+    worker.knowledgeDone.connect(lambda *args: knowledge_events.append(args))
     worker.run()
+    assert done_events == [(cid, "completed", "", "NOT_REQUESTED")]
+    assert len(knowledge_events) == 1
+    evidence = json.loads(knowledge_events[0][1])
+    assert evidence["knowledgeStatus"] == "RESULTS_FOUND"
+    assert evidence["evidencePersistence"] == "SAVED"
     messages = db.list_messages(cid)
     assert messages[-1]["status"] == "completed"
     assert messages[-1]["knowledgeEvidence"]["knowledgeStatus"] == "RESULTS_FOUND"
