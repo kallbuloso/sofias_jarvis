@@ -25,8 +25,6 @@ const memoryMutationBusy = ref(false)
 const useKnowledge = ref(false)
 const knowledgeDataset = ref('')
 const knowledgeNotice = ref('')
-const knowledgeReferences = ref([])
-const knowledgeQueryId = ref('')
 const knowledgeItems = [
   { title: 'JARVIS Knowledge', value: 'jarvis-knowledge' },
 ]
@@ -56,8 +54,6 @@ function inlineParts(value) {
 
 watch([useKnowledge, knowledgeDataset], () => {
   knowledgeNotice.value = ''
-  knowledgeReferences.value = []
-  knowledgeQueryId.value = ''
   if (knowledgeDataset.value && warning.value === 'Selecione um dataset antes de consultar Knowledge.') {
     warning.value = ''
   }
@@ -99,9 +95,7 @@ async function openConversation(id, preserveNotices = false) {
     if (!preserveNotices) {
       memoryNotice.value = ''
       knowledgeNotice.value = ''
-      knowledgeReferences.value = []
-      knowledgeQueryId.value = ''
-    }
+            }
     await scrollToBottom()
   }
 }
@@ -173,9 +167,9 @@ function handleStream(raw) {
       UNAVAILABLE: 'Knowledge indisponível; nenhuma fonte foi confirmada.',
       NOT_ATTEMPTED: 'A consulta documental não foi executada.',
     }
-    knowledgeNotice.value = descriptions[event.knowledgeStatus] || ''
-    knowledgeReferences.value = Array.isArray(event.references) ? event.references : []
-    knowledgeQueryId.value = typeof event.queryId === 'string' ? event.queryId : ''
+    knowledgeNotice.value = event.evidencePersistence === 'FAILED'
+      ? 'Falha ao salvar fontes no histórico; nenhuma referência foi persistida.'
+      : (descriptions[event.knowledgeStatus] || '')
     return
   }
   if (event.type === 'done') {
@@ -299,8 +293,6 @@ async function sendMessage() {
   warning.value = ''
   memoryNotice.value = ''
   knowledgeNotice.value = ''
-  knowledgeReferences.value = []
-  knowledgeQueryId.value = ''
   busy.value = true
   draft.value = ''
   const conversationId = selected.value
@@ -396,7 +388,40 @@ onMounted(async () => {
                   <strong v-if="part.bold">{{ part.text }}</strong><template v-else>{{ part.text }}</template>
                 </template>
               </div>
-              <div v-if="m.status !== 'completed'" class="status">{{ m.status }}</div>
+              <div v-if="m.status !== 'completed'" class="status">
+                {{ m.status === 'interrupted' ? 'Resposta interrompida' :
+                   m.status === 'failed' ? 'Resposta não concluída' : m.status }}
+              </div>
+              <div v-if="m.role === 'assistant' && m.knowledgeEvidence"
+                class="message-knowledge">
+                <div class="source-meta">
+                  Consulta Knowledge: {{ m.knowledgeEvidence.knowledgeStatus }}
+                  <span v-if="m.status !== 'completed'">
+                    · Evidências obtidas, mas resposta incompleta
+                  </span>
+                </div>
+                <details v-if="m.knowledgeEvidence.references.length"
+                  class="knowledge-sources">
+                  <summary>
+                    Fontes documentais verificadas
+                    ({{ m.knowledgeEvidence.references.length }})
+                  </summary>
+                  <div class="source-meta">Dataset: {{ m.knowledgeEvidence.dataset }}</div>
+                  <div v-if="m.knowledgeEvidence.queryId" class="source-meta">
+                    Consulta: {{ m.knowledgeEvidence.queryId }}
+                  </div>
+                  <div class="source-meta">
+                    Recuperação: {{ m.knowledgeEvidence.retrievedAt }}
+                  </div>
+                  <div v-for="source in m.knowledgeEvidence.references"
+                    :key="source.chunk_id" class="knowledge-source">
+                    <div class="source-title">{{ source.source_name }}</div>
+                    <div class="source-meta">Documento: {{ source.document_id }}</div>
+                    <div class="source-meta">Fonte: {{ source.source_id }}</div>
+                    <div class="source-meta">Trecho: {{ source.chunk_id }}</div>
+                  </div>
+                </details>
+              </div>
             </div>
             <div ref="historyEnd"></div>
           </div>
@@ -437,19 +462,6 @@ onMounted(async () => {
             </span>
             <div v-if="useKnowledge && knowledgeNotice" class="memory-feedback"
               role="status" aria-live="polite">{{ knowledgeNotice }}</div>
-            <details v-if="useKnowledge && knowledgeReferences.length"
-              class="knowledge-sources">
-              <summary>Fontes documentais verificadas ({{ knowledgeReferences.length }})</summary>
-              <div v-if="knowledgeQueryId" class="source-meta">Consulta: {{ knowledgeQueryId }}</div>
-              <div v-for="(source, index) in knowledgeReferences" :key="source.chunk_id || index"
-                class="knowledge-source">
-                <div class="source-title">{{ source.source_name }}</div>
-                <div class="source-meta">Documento: {{ source.document_id }}</div>
-                <div class="source-meta">Fonte: {{ source.source_id }}</div>
-                <div class="source-meta">Trecho: {{ source.chunk_id }}</div>
-                <div v-if="source.quote" class="source-quote">{{ source.quote }}</div>
-              </div>
-            </details>
           </div>
           <div class="memory-command-hint">
             Comandos supervisionados: /esquecer UUID
@@ -543,6 +555,7 @@ html, body, #app { height: 100%; margin: 0; }
 .memory-scope { max-width: 240px; min-width: 180px; }
 .knowledge-bar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center;
   gap: 10px 14px; padding: 8px 26px; border-top: 1px solid #243441; background: #101e28; }
+ .message-knowledge { margin-top: 12px; border-top: 1px solid #29444a; padding-top: 9px; }
 .knowledge-sources { flex: 0 0 100%; color: #a3d9d4; font-size: 12px;
   border-left: 2px solid #008080; padding: 6px 10px;
   background: rgba(0,128,128,.06); max-height: 160px; overflow-y: auto; overflow-wrap: anywhere; }
