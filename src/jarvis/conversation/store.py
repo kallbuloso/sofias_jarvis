@@ -277,6 +277,18 @@ class SQLiteConversationStore:
                  json.dumps(safe, ensure_ascii=False, separators=(",", ":")), _now()),
             )
 
+    def verified_user_utterance(self, message_id: str, conversation_id: str) -> str | None:
+        """Exact, completed user text; retrieved by primary identity, not LLM."""
+        mid = str(UUID(message_id))
+        cid = str(UUID(conversation_id))
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT content FROM messages WHERE id=? AND conversation_id=? "
+                "AND role='user' AND status='completed'",
+                (mid, cid),
+            ).fetchone()
+        return row["content"] if row is not None else None
+
     def append_user_message(self, conversation_id: str, content: str) -> str:
         if not content.strip():
             raise ValueError("Message content cannot be empty")
