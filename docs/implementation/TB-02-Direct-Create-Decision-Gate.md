@@ -123,3 +123,46 @@ the low-risk direct Create workflow with no second click. Verify remote
 active state, `user_direct_intent` receipt bound to `user-message:<uuid>`,
 single successful assistant response, and restart persistence.
 Do not mutate the original global teal preference. No `main` merge.
+
+## Desktop composer regression after clearing conversations (owner report)
+
+The owner reported that desktop launch succeeded but neither
+`Ctrl+Enter` nor the `Enviar` button submitted a message. This
+**blocks human direct-Create smoke**; no memory mutation was attempted.
+
+Code audit found a plausible silent front-end lockout: after the owner
+tested deleting all conversations, the Vue app correctly left
+`selected = ''` and did not create a replacement conversation.
+However, both `sendMessage()` and the `Enviar` button required a
+preselected conversation. With none selected, the textarea remained
+editable but both submission paths silently refused to run.
+A second silent path was an empty OpenAI model field: the button was
+disabled and sendMessage returned without a warning.
+
+On the feature branch, the composer now creates a new conversation
+**only when the user actually submits nonempty text**, under a send lock
+set before any asynchronous Qt call. This preserves the intentional
+empty-history state while preventing duplicate conversations if
+Ctrl+Enter and click occur together. The submit button no longer
+requires an already selected chat or model; when the model is missing,
+the handler shows an actionable warning and retains the draft.
+Missing bridge/model errors also keep the text for retry. The empty
+state explains the create-on-send behavior.
+
+Three **static wiring regression tests** were added for the send
+handler, Qt call, keyboard/click binding and visible error path.
+These are not proof of actual Qt WebView behavior.
+
+**Status:** suspected UI gating bug repaired in source, not confirmed
+as the owner's exact runtime cause. Windows pytest, Vite build and
+a read-only chat smoke are required before resuming any Memory
+write test. No schema migration, remote Memory mutation, main merge,
+or Product Done is implied.
+
+Suggested safe check: from the desktop, delete/select no conversation
+(or use a disposable empty-history state), type `Oi, JARVIS`,
+press Ctrl+Enter; verify a conversation appears and the reply arrives.
+Then send a second ordinary text with the button. If either still
+fails, report whether Enviar is disabled, whether a chat is selected,
+the OpenAI model field, any on-screen warning and lifecycle logs;
+do not blindly retry mutating requests.
