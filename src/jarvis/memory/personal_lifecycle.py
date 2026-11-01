@@ -113,7 +113,6 @@ class PersonalMemoryLifecycle:
             query=query.strip(), scopes=list(dict.fromkeys(scopes)),
             top_k=5, include_superseded=False,
         )
-        candidates: list[dict] = []
         seen: set[str] = set()
         for hit in hits:
             memory = hit.get("memory") if isinstance(hit, dict) else None
@@ -126,14 +125,13 @@ class PersonalMemoryLifecycle:
             if self.journal.has_unresolved_mutation(memory_id):
                 continue
             try:
-                candidates.append(self.preview(memory_id, action=action))
+                # Recall is already relevance-ordered. The returned item is only
+                # a candidate: the user still sees its exact content and must
+                # explicitly approve before any mutation occurs.
+                return self.preview(memory_id, action=action)
             except ValueError:
                 continue
-        if not candidates:
-            raise ValueError("memory_target_not_found")
-        if len(candidates) != 1:
-            raise ValueError("memory_target_ambiguous")
-        return candidates[0]
+        raise ValueError("memory_target_not_found")
 
     def preview(self, memory_id: str, *, action: str) -> dict:
         if action not in {"supersede", "forget"}:
