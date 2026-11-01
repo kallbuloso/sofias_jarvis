@@ -23,6 +23,63 @@ class PersonalMemoryLifecycle:
         if client.base_url != self.service_url:
             raise ValueError("memory_service_mismatch")
 
+    def create(self, *, content: str, scope: str, conversation_id: str,
+               confirmation: PersonalMutationAuthorization) -> dict:
+        """User-approved personal Create: journal-first, no retry after ambiguity."""
+        if (not isinstance(confirmation, PersonalMutationAuthorization)
+                or confirmation.action != "create"
+                or confirmation.target_memory_id is not None
+                or confirmation.method != "desktop_approved"
+                or confirmation.conversation_id != str(UUID(conversation_id))):
+            raise ValueError("missing_or_mismatched_create_approval")
+        if scope not in {"global", "project:jarvis"}:
+            raise ValueError("invalid_create_scope")
+        if looks_like_credential(content):
+            raise ValueError("sensitive_content_rejected")
+        memory_type = "profile" if scope == "global" else "semantic"
+        operation_id = str(uuid4())
+        provenance = {
+            "origin_kind": "user_asserted",
+            "source_system": "jarvis",
+            "source_ref": f"memory-operation:{operation_id}",
+            "conversation_uuid": confirmation.conversation_id,
+            "confirmation_ref": f"user-confirmation:{confirmation.authorization_id}",
+        }
+        _payload(content, provenance)  # Check before any journal/network operation.
+        payload = {
+            "idempotency_key": operation_id,
+            "memory_type": memory_type,
+            "scope": scope,
+            "content": content.strip(),
+            "provenance": provenance,
+        }
+        self.journal.prepare(
+            operation_id, self.service_url, payload, confirmation=confirmation,
+        )
+
+        def confirmed(reply: dict) -> dict:
+            memory_id = str(UUID(reply["memory_id"]))
+            if (reply.get("lifecycle") != "active"
+                    or reply.get("content") != content.strip()
+                    or reply.get("scope") != scope
+                    or reply.get("memory_type") != memory_type
+                    or reply.get("provenance", {}).get("origin_kind") != "user_asserted"
+                    or reply.get("provenance", {}).get("source_system") != "jarvis"
+                    or reply.get("provenance", {}).get("source_ref") !=
+                    provenance["source_ref"]):
+                raise ValueError("invalid_personal_create_ack")
+            self.journal.resolve(operation_id, status="confirmed", memory_id=memory_id)
+            return {"status": "CONFIRMED", "operation_id": operation_id,
+                    "memory_id": memory_id, "scope": scope,
+                    "memory_type": memory_type}
+
+        return self._execute(
+            operation_id, lambda: self.client.create(
+                memory_type=memory_type, scope=scope, content=content.strip(),
+                provenance=provenance, idempotency_key=operation_id,
+            ), confirmed,
+        )
+
     def preview(self, memory_id: str, *, action: str) -> dict:
         if action not in {"supersede", "forget"}:
             raise ValueError("invalid_personal_action")
