@@ -37,3 +37,27 @@ cd ..
 Review pytest/build output first. If both pass, the first human desktop test is **preview and cancel only** with an innocuous disposable, explicit `project:jarvis` request. Check content/scope and choose **Não guardar**, never **Guardar informação** in this first smoke. Verify no remote mutation, no new `desktop_approved` journal entry, and orderly shutdown. No further live test is authorized in this checkpoint.
 
 A separate, later owner-approved disposable real Create test must verify returned UUID, live `active` state, journal `confirmed/desktop_approved`, and persisted conversational acknowledgement. The original global teal preference remains out of scope. **Do not declare Increment 2 accepted or TB-02 Product Done before these gates.**
+
+## Windows gate: supervised natural Create (2026-11-01)
+
+Owner independently ran and reported:
+
+- `python -m pytest -q`: **245 passed in 9.66s**
+- `npm run build`: **PASS**, Vite v7.3.7, 559 modules transformed, completed in **5.20s**.
+- Bundled JS remains >500 kB (non-blocking optimization warning).
+
+**Verdict:** offline regression and frontend compilation **PASS**.
+No Windows visual Create preview/cancel evidence yet, and no actual
+new supervised Cognitive Memory Create has been authorized or verified.
+
+**Next human check:** on Windows desktop, submit
+"JARVIS, lembre que no projeto JARVIS a palavra de teste é morango."
+Expected: readable Create preview with correct proposed text, intended
+`project:jarvis` scope, and Cancel vs Guardar actions. The user must
+press **Não guardar** (NOT Guardar informação), then confirm subsequent
+normal chat/shutdown. Read-only local SQLite journal checks may be
+performed before and after to ensure no `desktop_approved` write
+operation was prepared. The preserved real teal memory is out of scope.
+
+Do not declare B-01 conversational Create Product Done until real human
+checks are accepted. No merge to main.
