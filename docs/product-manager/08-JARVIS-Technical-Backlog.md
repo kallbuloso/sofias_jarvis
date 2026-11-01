@@ -533,3 +533,32 @@ scheduler, voice, unapproved dataset discovery, `main` merge, or
 TB-03 work has been enabled.
 
 See `docs/implementation/TB-02-Conversational-Create-Increment-2.md`.
+
+## 21. Owner-approved direct low-risk Create authority — implementation pending Windows acceptance
+
+The owner approved a policy change on 2026-11-01: an explicit,
+unambiguous, low-risk request from the current user to remember
+a fact is itself authorization for **that exact Cognitive Create**.
+A second click is unnecessary. LLM classification is still only a
+proposal; an independent Core decision evaluates the persisted
+original user message, exact content, intended scope, sensitivity,
+authorization and provider compatibility before execution.
+Ambiguous, quoted, inferred, compound, sensitive, temporal and
+other-project requests remain blocked/clarified. Update, Forget,
+tasks/scheduler, autonomous candidate capture and voice are unchanged.
+
+The latest branch has a conservative `evaluate_direct_create`
+decision policy; a `user_direct_intent` audit receipt bound to
+`user-message:<uuid>` with unique replay prevention; a re-validation
+inside `PersonalMemoryLifecycle`; and synchronous reply-thread
+execution only after the user message is stored. Response confirms
+success only on real Memory ACK; UNKNOWN is not retried. Human-facing
+text gets one final assistant result, without a second-click dialog.
+Existing click authorization remains available as fallback/engineering
+path but is no longer emitted for safe direct Create.
+
+**Implementation status: UNVERIFIED on Windows**; tests added but not
+executed on owner environment. See the exact policy amendment:
+`docs/product-manager/09-JARVIS-Direct-Memory-Authorization-Amendment.md`.
+TB-02 remains open, feature branch only, no main merge. End-to-end
+natural Update/Forget remains deferred pending target resolution.
