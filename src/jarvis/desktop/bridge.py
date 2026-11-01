@@ -444,13 +444,18 @@ class MemoryPreviewWorker(QObject):
             )
             preview = lifecycle.preview(self.memory_id, action=self.action)
             self.full_preview = preview
-            result = {"ok": True, "action": self.action, "preview": {
-                "memory_id": preview["memory_id"],
-                "memory_type": preview["memory_type"],
-                "scope": preview["scope"],
-                "lifecycle": preview["lifecycle"],
-                "content": preview["content"],
-            }}
+            result = {
+                "ok": True,
+                "action": self.action,
+                "replacement": self.replacement if self.action == "supersede" else "",
+                "preview": {
+                    "memory_id": preview["memory_id"],
+                    "memory_type": preview["memory_type"],
+                    "scope": preview["scope"],
+                    "lifecycle": preview["lifecycle"],
+                    "content": preview["content"],
+                },
+            }
         except Exception as exc:
             # Never send SDK exceptions, provider errors or credentials to UI.
             result = {"ok": False, "error": type(exc).__name__}
