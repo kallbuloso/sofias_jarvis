@@ -83,3 +83,15 @@ records during the smoke.
 
 **B-02a NOT accepted** until automated and human visual evidence.
 Do not declare TB-02 Product Done or merge into main.
+
+## Windows B-02a automated acceptance evidence (2026-11-01)
+
+Owner provided real local Windows outputs after updating the feature branch:
+
+- **Consistent production SQLite pre-v5 backup:** `C:\\Users\\Usuario\\AppData\\Local\\JARVIS\\jarvis-pre-v5-20261101-113703.sqlite3` (`BACKUP_OK`).
+- **Offline regression suite:** `214 passed in 8.38s`.
+- **Frontend production build:** `npm run build`, Vite v7.3.7, 559 modules transformed, `built in 5.23s`. The >500 kB chunk warning is performance guidance, not a build failure.
+
+**Verdict:** B-02a automated tests and build **PASS**. Running pytest on temporary fixtures does not itself prove the operational SQLite v4→v5 transition or visual source attribution. Both remain pending desktop smoke.
+
+Human smoke pending: open desktop (will invoke live SQLite migration; backup already exists), enable `Consultar Knowledge` with the currently approved `jarvis-knowledge` dataset, ask a non-sensitive question about ADR-0001, verify source metadata attached to the exact assistant message, switch conversations and return, shut down/relaunch desktop, verify unchanged source/document/chunk IDs on the same message and `completed` status. Do not create, supersede or forget any Cognitive Memory records. If retrieval returns `NO_RESULTS`, `UNAVAILABLE`, or persistence failure, record that result rather than claim verified sources. B-02 and TB-02 Product Done are **not yet accepted**.
