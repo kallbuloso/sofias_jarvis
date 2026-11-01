@@ -218,3 +218,23 @@ def test_attribution_policy_does_not_claim_disabled_memory(tmp_path, monkeypatch
     worker.run()
     assert results == [(cid, "completed", "", "NOT_REQUESTED")]
     assert all(m["role"] != "developer" for m in store.completed_context(cid))
+
+
+def test_desktop_delete_requires_known_id_and_rejects_active_work(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    bridge = JarvisBridge()
+    one = json.loads(bridge.createConversation())["id"]
+    two = json.loads(bridge.createConversation())["id"]
+    assert json.loads(bridge.deleteConversation("wrong"))["error"] == "invalid_conversation"
+    assert json.loads(bridge.deleteConversation(one))["ok"] is True
+    assert json.loads(bridge.deleteConversation(one))["error"] == "unknown_conversation"
+    assert [x["id"] for x in json.loads(bridge.listConversations())["items"]] == [two]
+
+    from PySide6.QtCore import QThread
+    thread = QThread()
+    bridge._thread = thread  # Simulate an active reply; never start the thread.
+    try:
+        assert json.loads(bridge.deleteConversation(two)) == {"ok": False, "error": "busy"}
+    finally:
+        bridge._thread = None
+    assert json.loads(bridge.listMessages(two))["ok"]
