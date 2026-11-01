@@ -14,6 +14,10 @@ const memoryConfigured = ref(false)
 const useMemory = ref(false)
 const memoryScope = ref('')
 const memoryNotice = ref('')
+const memoryPreviewBusy = ref(false)
+const memoryPreviewDialog = ref(false)
+const memoryPreview = ref(null)
+const memoryPreviewReplacement = ref('')
 const useKnowledge = ref(false)
 const knowledgeDataset = ref('')
 const knowledgeNotice = ref('')
@@ -115,6 +119,18 @@ async function scrollToBottom() {
 function handleStream(raw) {
   let event
   try { event = JSON.parse(raw) } catch { return }
+  if (event.type === 'memory_preview') {
+    memoryPreviewBusy.value = false
+    if (event.ok && event.preview && typeof event.preview.memory_id === 'string') {
+      memoryPreview.value = { ...event.preview, action: event.action }
+      memoryPreviewDialog.value = true
+    } else {
+      memoryPreview.value = null
+      warning.value = 'Não foi possível validar o alvo da operação de memória (' +
+        (event.error || 'preview_unavailable') + '). Nenhuma alteração foi realizada.'
+    }
+    return
+  }
   if (event.type === 'knowledge') {
     if (event.conversationId !== selected.value) return
     const descriptions = {
@@ -162,9 +178,48 @@ function handleStream(raw) {
   scrollToBottom()
 }
 
+async function previewMemoryCommand(text) {
+  // Only the explicit slash grammar can enter the memory control path.
+  // No LLM answer, retrieved content or ordinary chat triggers a mutation.
+  const forget = text.match(/^\/esquecer\s+([a-f0-9-]{36})$/i)
+  const update = text.match(/^\/atualizar\s+([a-f0-9-]{36})\s+\|\s+(.+)$/is)
+  if (!forget && !update) {
+    warning.value = 'Use /esquecer UUID ou /atualizar UUID | nova informação.'
+    return
+  }
+  const action = forget ? 'forget' : 'supersede'
+  const memoryId = (forget || update)[1]
+  const replacement = update ? update[2].trim() : ''
+  if (update && (!replacement || replacement.length > 16384)) {
+    warning.value = 'A nova informação deve ter de 1 a 16384 caracteres.'
+    return
+  }
+  warning.value = ''
+  memoryPreview.value = null
+  memoryPreviewReplacement.value = replacement
+  memoryPreviewBusy.value = true
+  try {
+    const result = await call('previewPersonalMemory', action, memoryId)
+    if (!result.ok) {
+      memoryPreviewBusy.value = false
+      warning.value = 'Prévia recusada: ' + (result.error || 'unavailable')
+      return
+    }
+    draft.value = ''
+  } catch {
+    memoryPreviewBusy.value = false
+    warning.value = 'Falha ao solicitar a prévia da memória.'
+  }
+}
+
 async function sendMessage() {
   const text = draft.value.trim()
-  if (!ready.value || busy.value || !selected.value || !model.value.trim() || !text) return
+  if (!ready.value || busy.value || memoryPreviewBusy.value || !selected.value || !text) return
+  if (/^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)) {
+    await previewMemoryCommand(text)
+    return
+  }
+  if (!model.value.trim()) return
   if (useMemory.value && !memoryScope.value) {
     warning.value = 'Selecione um escopo antes de consultar o Sofias Memory.'
     return
@@ -328,18 +383,49 @@ onMounted(async () => {
               </div>
             </details>
           </div>
+          <div class="memory-command-hint">
+            Comandos supervisionados (prévia somente): /esquecer UUID
+            ou /atualizar UUID | nova informação.
+          </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
               variant="outlined" density="comfortable" hide-details
-              label="Mensagem" :disabled="busy || !ready"
+              label="Mensagem" :disabled="busy || memoryPreviewBusy || !ready"
               @keydown.ctrl.enter.prevent="sendMessage"/>
-            <v-btn color="primary" size="large" :loading="busy"
-              :disabled="!ready || !selected || !draft.trim() || !model.trim() || busy"
+            <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
+              :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy ||
+                (!model.trim() && !/^\\/(?:esquecer|atualizar)(?:\\s|$)/i.test(draft.trim()))"
               @click="sendMessage">Enviar</v-btn>
           </div>
         </div>
       </v-main>
     </v-layout>
+    <v-dialog v-model="memoryPreviewDialog" max-width="700" persistent>
+      <v-card v-if="memoryPreview" title="Prévia da memória — somente leitura">
+        <v-card-text>
+          <p>Operação solicitada: <strong>{{ memoryPreview.action === 'forget' ? 'Esquecer' : 'Substituir' }}</strong></p>
+          <p>UUID: <code>{{ memoryPreview.memory_id }}</code></p>
+          <p>Escopo: {{ memoryPreview.scope }} · Tipo: {{ memoryPreview.memory_type }}</p>
+          <p>Estado: {{ memoryPreview.lifecycle }}</p>
+          <p>Conteúdo atual:</p>
+          <div class="memory-preview-content">{{ memoryPreview.content }}</div>
+          <template v-if="memoryPreview.action === 'supersede'">
+            <p>Substituição proposta:</p>
+            <div class="memory-preview-content">{{ memoryPreviewReplacement }}</div>
+          </template>
+          <p class="memory-preview-disclaimer">
+            Esta etapa é apenas uma consulta. Não há autorização nem
+            execução de alterações neste painel.
+          </p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="primary" @click="memoryPreviewDialog = false">
+            Fechar sem alterar
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-app>
 </template>
 
@@ -388,4 +474,11 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
+</style>
+
+<style scoped>
+.memory-command-hint { padding: 5px 26px; font-size: 12px; color: #819ca2; }
+.memory-preview-content { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px;
+  border: 1px solid #32545b; border-radius: 8px; background: #132932; }
+.memory-preview-disclaimer { margin-top: 16px; font-size: 13px; color: #b5b9c9; }
 </style>
