@@ -123,3 +123,34 @@ the fixture now returns `JARVIS Knowledge` and the test additionally
 asserts worker `done` status and `evidencePersistence=SAVED` when
 the mocked retrieval succeeds. Await fresh Windows pytest and
 frontend build; **do not claim 235 passed or desktop smoke completed**.
+
+## Windows validation after Knowledge fixture correction — PASS (2026-11-01)
+
+After changing the conversational Knowledge test double's dataset name
+from `JARVIS` to the contractually required `JARVIS Knowledge`,
+the owner reran and supplied all three Windows results:
+
+- Isolated `tests/test_text_conversational_desktop.py`: **8 passed in 1.14s**.
+- Full pytest suite: **235 passed in 8.93s**, zero failures.
+- `npm run build`: Vite v7.3.7, **559 modules transformed**,
+  **built in 5.35s**. The >500kB chunk warning is non-blocking.
+
+**Verdict: text routing + deletion automated gate PASS.**
+
+**Still pending:** desktop smoke using the actual configured model:
+(1) natural-language Knowledge query with the verified source attached
+to its assistant message; (2) natural-language Recall of the known
+global teal preference; (3) classification of a future reminder
+with explicit acknowledgment that no scheduler exists; (4) natural
+memory Create request returns an honest not-executed status; (5)
+confirm the removal of both manual switches; (6) safely delete a
+dispensable local conversation, restart, and verify unaffected
+conversations and orderly shutdown. Deletion does not affect
+Sofias Memory cognitive memories nor the local operations journal.
+No new Cognitive Memory mutation or voice capture is authorized.
+
+**Not Product Done:** natural Create/Update/Forget with one-use
+conversation-friendly confirmation is still an acknowledged gap.
+The closed router currently classifies the CURRENT utterance,
+not a resolved multi-turn memory target; real assistant-like
+disambiguation and scope/consent management are future increments.
