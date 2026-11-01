@@ -48,6 +48,7 @@ class ReplyWorker(QObject):
         self.conversational = conversational
         self.routing_status = "NOT_REQUESTED"
         self.create_proposal: dict | None = None
+        self.direct_create = None
         self.cancelled = threading.Event()
 
     @Slot()
@@ -67,6 +68,7 @@ class ReplyWorker(QObject):
             client = OpenAI(api_key=self.api_key, timeout=30.0)
             from jarvis.conversation.grounding import GroundedTextProvider
             from jarvis.conversation.intent import TextIntentRouter
+            from jarvis.conversation.create_decision import evaluate_direct_create
             prepared_answer = None
             if self.conversational:
                 try:
@@ -79,14 +81,31 @@ class ReplyWorker(QObject):
                     elif intent.action == "knowledge_query":
                         self.knowledge_dataset = "jarvis-knowledge"
                     elif intent.action == "memory_create":
-                        self.create_proposal = {
-                            "content": intent.content, "scope": intent.scope,
-                        }
-                        prepared_answer = (
-                            "Entendi que você deseja guardar essa informação. "
-                            "Confira a proposta de registro e autorize se estiver "
-                            "correta. Ainda não gravei nenhuma memória."
+                        decision = evaluate_direct_create(
+                            self.prompt, classified_action=intent.action,
                         )
+                        if decision.result == "PERMITTED":
+                            if intent.scope is not None and intent.scope != decision.scope:
+                                prepared_answer = (
+                                    "Não consegui determinar um escopo consistente "
+                                    "para guardar essa informação. Não gravei nada."
+                                )
+                            else:
+                                # The actual user message will be durably recorded
+                                # before evaluating its authority again in Core.
+                                self.direct_create = decision
+                        elif decision.result == "CLARIFY":
+                            prepared_answer = (
+                                "Essa informação vale como preferência geral ou "
+                                "somente para o projeto JARVIS? Especifique o "
+                                "contexto ao repetir o pedido; ainda não gravei nada."
+                            )
+                        else:
+                            prepared_answer = (
+                                "Não consegui validar esse pedido de memória "
+                                "como uma instrução direta e segura. "
+                                "Nenhuma informação foi gravada."
+                            )
                     elif intent.action == "reminder_request":
                         prepared_answer = (
                             "Entendi que você quer um lembrete agendado. "
@@ -111,7 +130,85 @@ class ReplyWorker(QObject):
                         "Tente novamente quando o roteamento estiver disponível."
                     )
 
-            if prepared_answer is not None:
+            if self.direct_create is not None:
+                decision = self.direct_create
+
+                class DirectCreateProvider:
+                    """Execute exactly the owner's current stored utterance."""
+
+                    def stream_text(inner_self, *, model, messages):
+                        from jarvis.memory.cognitive import CognitiveMemoryClient
+                        from jarvis.memory.connection import configured_memory_url
+                        from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+                        from jarvis.memory.journal import MemoryOperationJournal
+                        from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+                        try:
+                            if self.cancelled.is_set() or runtime is None:
+                                yield "Pedido interrompido antes da gravação."
+                                return
+                            message_id = runtime.last_user_message_id
+                            if message_id is None:
+                                raise ValueError("missing_verified_user_message")
+                            url = configured_memory_url()
+                            if not url:
+                                yield ("O Sofias Memory não está configurado. "
+                                       "Nenhuma gravação foi executada.")
+                                return
+                            key = WindowsCredentialStore().get_memory_key()
+                            if not key:
+                                yield ("Não foi possível acessar a credencial "
+                                       "de memória. Nenhuma gravação foi executada.")
+                                return
+                            reader = CognitiveMemoryClient(url, key)
+                            if reader.diagnose().get("status") != "COMPATIBLE":
+                                yield ("O Sofias Memory está incompatível. "
+                                       "Nenhuma gravação foi iniciada.")
+                                return
+                            consent = PersonalMutationAuthorization.from_explicit_user_message(
+                                action="create", conversation_id=self.conversation_id,
+                                message_id=message_id,
+                            )
+                            service = PersonalMemoryLifecycle(
+                                reader, MemoryOperationJournal(database_path()), url,
+                            )
+                            if self.cancelled.is_set():
+                                yield "Pedido interrompido antes da gravação."
+                                return
+                            reply = service.create(
+                                content=decision.content, scope=decision.scope,
+                                conversation_id=self.conversation_id,
+                                confirmation=consent,
+                            )
+                            if reply.get("status") == "CONFIRMED":
+                                yield (
+                                    "Guardei essa informação no Sofias Memory "
+                                    + ("para o projeto JARVIS." if decision.scope == "project:jarvis"
+                                       else "como preferência geral.")
+                                )
+                            elif reply.get("status") == "RESULT_UNKNOWN":
+                                yield (
+                                    "O Sofias Memory não confirmou o resultado. "
+                                    "Não vou repetir automaticamente a gravação; "
+                                    "é necessário verificar o journal."
+                                )
+                            else:
+                                yield (
+                                    "O Sofias Memory não confirmou a gravação "
+                                    f"({reply.get('status', 'FAILED')}). "
+                                    "Não registrei essa informação como concluída."
+                                )
+                        except Exception as exc:
+                            trace("direct_memory_create_failed",
+                                  error_class=type(exc).__name__)
+                            yield (
+                                "Não consegui confirmar o registro da memória. "
+                                "Não repita automaticamente; verifique o journal "
+                                "antes de uma nova tentativa."
+                            )
+
+                provider = DirectCreateProvider()
+            elif prepared_answer is not None:
                 class StaticAnswer:
                     def stream_text(self, *, model, messages):
                         yield prepared_answer
