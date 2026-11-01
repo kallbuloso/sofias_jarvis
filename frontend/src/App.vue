@@ -272,8 +272,9 @@ async function confirmCreateProposal() {
       proposal.token, proposal.conversationId, createScope.value,
     )
     // Consume locally even when transport fails; do not retry blindly.
-    createProposal.value = null
+    createProposal.value = { ...proposal, token: '' }
     if (!result.ok) {
+      createProposal.value = null
       createBusy.value = false
       createDialog.value = false
       warning.value = 'Autorização recusada: ' + (result.error || 'unknown') +
