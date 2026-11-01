@@ -217,6 +217,16 @@ def test_desktop_conversational_create_worker_confirms_journal_with_fake_service
     assert result["ok"] is True
     assert result["status"] == "CONFIRMED"
     assert result["action"] == "create"
+    assert result["transcriptPersisted"] is True
+    from jarvis.conversation.store import SQLiteConversationStore
+    transcript = SQLiteConversationStore(database_path()).list_messages(conv)
+    assert len(transcript) == 1
+    assert transcript[0]["role"] == "assistant"
+    assert transcript[0]["status"] == "completed"
+    assert transcript[0]["content"] == (
+        "Informação guardada no Sofias Memory para o projeto JARVIS."
+    )
+    assert "Vuetify" not in transcript[0]["content"]
     assert len(calls) == 1
     assert calls[0][0:3] == ("semantic", "project:jarvis", "Prefiro Vuetify 3")
     journal = MemoryOperationJournal(database_path())
