@@ -93,7 +93,12 @@ def test_forget_requires_literal_uuid(monkeypatch, capsys, setup):
     monkeypatch.setattr(sys, "argv", ["main.py", "--memory-forget", memory_id])
     assert main_module().main() == 0
     output = capsys.readouterr().out
-    assert json.loads(output[output.rfind("{"):])["status"] == "CONFIRMED"
+    outcome = json.loads(output[output.rfind("{"):])
+    assert outcome["status"] == "CONFIRMED"
+    audit = journal.get(outcome["operation_id"])
+    assert audit["confirmation_ref"].startswith("user-confirmation:")
+    assert audit["confirmation_method"] == "cli_typed"
+    assert audit["confirmed_by_user_at"] is not None
     assert calls == ["get", "get", "forget"]
 
 
@@ -105,4 +110,9 @@ def test_supersede_requires_literal_uuid_and_preserves_journal(monkeypatch, caps
     assert main_module().main() == 0
     output = capsys.readouterr().out
     assert '"status": "CONFIRMED"' in output
+    outcome = json.loads(output[output.rfind("{"):])
+    audit = journal.get(outcome["operation_id"])
+    assert audit["confirmation_ref"].startswith("user-confirmation:")
+    assert audit["confirmation_method"] == "cli_typed"
+    assert audit["confirmed_by_user_at"] is not None
     assert calls == ["get", "get", "supersede"]
