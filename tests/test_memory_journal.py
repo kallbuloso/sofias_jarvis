@@ -93,7 +93,7 @@ def test_existing_v1_database_is_migrated_without_losing_messages(tmp_path):
     new = SQLiteConversationStore(path)
     assert new.list_messages(conv)[0]["content"] == "Histórico antigo"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert db.execute("SELECT name FROM sqlite_master WHERE name='cognitive_write_operations'").fetchone()
 
 
@@ -127,4 +127,4 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
     assert reopened.get(op_id)["status"] == "prepared"
     assert reopened.claim(op_id)["payload"] == payload
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
