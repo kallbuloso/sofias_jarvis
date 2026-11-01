@@ -343,3 +343,23 @@ memories MUST NOT be used for the initial regression test.
 durable message-linked provenance still to be implemented.
 
 Main branch remains untouched. No TB-03.
+
+## 14. TB-02 B-01b — Desktop Preview Gate (read-only; verification pending)
+
+The B-01a Core/CLI suite passed on the owner's Windows machine:
+**185 passed in 7.84s**. The earlier estimate of 186 cases was
+incorrect (172 pre-existing + 9 lifecycle + 4 CLI = 185).
+
+Next commit introduced a deliberately read-only conversational preview
+for explicit `/esquecer UUID` and `/atualizar UUID | conteúdo`
+commands. The UI shows only the verified owner-controlled record and
+a **Close without changing** action. Preview executes on a Qt worker
+and cannot perform a memory mutation. Four new Qt tests are committed,
+but Windows pytest and Vite build are pending human evidence.
+
+Next legitimate step: validate 189 tests / frontend build and preview
+a JARVIS-owned memory **without confirming a write**. Then add a
+separately tested one-use authorization/execute path, plus supervised
+Create; only thereafter B-01 Product Done review. B-02 remains pending.
+The prior Qt crash regression is still observed during desktop smoke.
+No merge to main, no TB-03.
