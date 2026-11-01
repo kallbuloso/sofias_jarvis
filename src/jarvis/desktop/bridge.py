@@ -94,8 +94,13 @@ class ReplyWorker(QObject):
                     self.routing_status = "UNAVAILABLE"
                     trace("conversational_router_unavailable",
                           error_class=type(exc).__name__)
-                    # Safest degradation: ordinary read-only chat, never mutation.
-                    # The grounding policy below forbids claiming effects.
+                    # Fail closed for ambiguous intent: do not pass a possible
+                    # write request to a generic reply that might claim success.
+                    prepared_answer = (
+                        "Não consegui interpretar este pedido com segurança agora. "
+                        "Nenhuma memória, tarefa ou agendamento foi modificado. "
+                        "Tente novamente quando o roteamento estiver disponível."
+                    )
 
             if prepared_answer is not None:
                 class StaticAnswer:
