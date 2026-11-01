@@ -161,16 +161,16 @@ def test_natural_create_offer_requires_separate_approval(monkeypatch, tmp_path):
 
     bridge = JarvisBridge()
     conversation_id = json.loads(bridge.createConversation())["id"]
-    bridge._worker = SimpleNamespace(
-        create_proposal={"content": "No projeto JARVIS prefiro Vuetify 3",
-                         "scope": "project:jarvis"},
-        routing_status="CLASSIFIED",
-    )
     events = []
     bridge.streamEvent.connect(lambda raw: events.append(json.loads(raw)))
-    bridge._on_done(conversation_id, "completed", "", "NOT_REQUESTED")
-    assert [event["type"] for event in events] == ["done", "create_proposal"]
-    offer = events[1]
+    bridge._on_conversational_create_proposed(
+        conversation_id, json.dumps({
+            "content": "No projeto JARVIS prefiro Vuetify 3",
+            "scope": "project:jarvis",
+        }),
+    )
+    assert [event["type"] for event in events] == ["create_proposal"]
+    offer = events[0]
     assert offer["ok"] is True
     assert offer["content"] == "No projeto JARVIS prefiro Vuetify 3"
     assert offer["scope"] == "project:jarvis"
