@@ -144,3 +144,36 @@ de streaming interrompido/falho sem alegar resposta completa.
 
 **Nenhuma implementação, mutação em memória real ou merge é
 autorizada automaticamente por esta auditoria.**
+
+## 6. Post-finalization re-review (2026-11-01) — status by evidence
+
+This section supersedes the earlier **implementation-status** claims
+above without erasing the historical findings or falsely declaring
+Product Done.
+
+| Item | Observed evidence | Judgment |
+|---|---|---|
+| B-01a — supervised Cognitive Memory Create via CLI | Owner created disposable `project:jarvis/semantic` record; remote `active`, local `confirmed` | PASS for CLI |
+| B-01b/c — desktop preview, cancel, Supersede, Forget | Owner confirmed preview/cancel, real replacement and Forget, remote state transitions and local journal `confirmed` | PASS |
+| B-01d — durable typed consent | SQLite v4, fake desktop + CLI tests; owner reported `202 passed`, successful build, historical journal correctly `null` for retroactive consent | PASS for v4 contract |
+| B-02a — durable Knowledge provenance | SQLite v5 linked to assistant-message ID, `214 passed`, Vite build, screenshot shows `RESULTS_FOUND` and verified source IDs inside the assistant message; owner confirmed conversation switch, restart and correct shutdown | **PASS** |
+| Non-authoritative content boundary | Retrieved document IDs shown only as verified metadata; no automatic Cognitive Memory mutation in Knowledge flow | PASS for inspected pilot |
+| UI **Create/lembrar** intent | `--memory-create` works from CLI, but no chat `/lembrar` or other desktop Create flow yet. `/atualizar` and `/esquecer` are supervised in desktop | **OPEN** if FR-010/S04-AC01 is interpreted as end-user conversational Create |
+| Controlled service degradation | Offline tests and existing failure handling exist; a specific human desktop degraded-service scenario is not documented | **NOT VERIFIED in human smoke** |
+| Contradictory evidence/knowledge | Single ADR documented and retrieved; no contradictory multi-source test | **NOT VERIFIED in pilot** |
+
+This distinction matters: passing B-01 and B-02 *increments* does not
+prove that all acceptance examples of FR-010/S04-AC01..09 have been
+exercised end-to-end via the user-facing desktop. A minimal supervised
+`/lembrar` UX may be needed to close that gap; a low-risk controlled
+degradation test can be conducted without interfering with the real
+Sofias Memory server. Any new behavior must be approved and verified
+before claiming `TB-02 Product Done`.
+
+The screenshot shows some raw Markdown emphasis tokens in assistant
+prose. This is known deferred cosmetic work, not a provenance failure.
+The Vite >500 kB chunk warning is non-blocking.
+
+**Decision requested from owner:** confirm the remaining end-user
+Create/degradation acceptance boundary before finalizing TB-02.
+Neither Product Done nor merge to `main` is inferred from this report.
