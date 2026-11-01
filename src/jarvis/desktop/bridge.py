@@ -380,6 +380,25 @@ class ConversationalCreateWorker(QObject):
                 "scope": result.get("scope"),
                 "retryAutomatically": False,
             }
+            if payload["ok"]:
+                # Only a confirmed remote write may be described as saved.
+                # Store an operational acknowledgement, not the sensitive
+                # memory content, and never mask success if SQLite fails here.
+                try:
+                    store = SQLiteConversationStore(database_path())
+                    text = ("Informação guardada no Sofias Memory "
+                            + ("como preferência geral." if self.pending.scope == "global"
+                               else "para o projeto JARVIS."))
+                    message_id = store.begin_assistant_message(
+                        self.pending.conversation_id,
+                    )
+                    store.append_assistant_delta(message_id, text)
+                    store.end_assistant_message(message_id, successful=True)
+                    payload["transcriptPersisted"] = True
+                except Exception as exc:
+                    trace("create_transcript_ack_failed",
+                          error_class=type(exc).__name__)
+                    payload["transcriptPersisted"] = False
         except Exception as exc:
             payload = {
                 "action": "create", "ok": False, "status": "NOT_CONFIRMED",
