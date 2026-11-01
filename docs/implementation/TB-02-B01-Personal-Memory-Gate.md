@@ -275,3 +275,67 @@ preview matches. Inspect operation result; do not retry an ambiguous
 outcome. Verify old record `superseded`, identify new active UUID,
 and check local journal. Do not proceed to Forget yet. Preserved
 global/profile teal memory remains out of scope.
+
+## B-01c — Forget remote and local journal verification (2026-11-01)
+
+The owner independently inspected the real disposable blue record
+`53fd477d-2061-46c3-89b7-d265cd48a2a1` after supervised Forget.
+Remote Sofias Memory returned `FOUND` with `lifecycle=forgotten`,
+`content=null`, `scope=null`, `forgotten_at=2026-11-01T13:59:08.616332Z`
+and `source_ref=null`. The owner's independent read-only SQLite
+query for `operation_kind=user_forget` and this exact target returned:
+`('6e925d24-1205-4864-9a69-79fc6616d154', 'confirmed',
+'53fd477d-2061-46c3-89b7-d265cd48a2a1', None)`.
+**B-01c functional Forget = PASS.**
+
+## B-01d — Durable typed authorization audit (implementation awaiting test)
+
+The functional Supersede and Forget operations above were recorded
+before this schema existed. They **must not be retroactively presented
+as having a durable consent receipt**. Their local journal records
+prove intent processing, idempotent dispatch and a confirmed result,
+but not the independent human confirmation event.
+
+The next increment adds SQLite schema version **4**: optional
+`confirmation_ref` (unique), `confirmation_method`,
+`confirmation_conversation_id`, `confirmed_by_user_at` to the
+existing `cognitive_write_operations` journal. All historical rows
+remain NULL in these columns. Successful or rejected operations can
+still discard `payload_json` while retaining their audit metadata.
+No typed phrase, token, credential, or forgotten memory content is
+persisted in the receipt.
+
+`PersonalMutationAuthorization` is generated only after explicit
+typed confirmation. The Qt single-use gate produces a
+`desktop_typed` receipt bound to its conversation; the CLI issues a
+`cli_typed` receipt for the exact Create/Supersede/Forget phrase.
+`PersonalMemoryLifecycle` now requires this receipt for every user
+Supersede and Forget. `MemoryOperationJournal.prepare()` validates
+action/target/method and writes the receipt **atomically** alongside
+the prepared operation, before any external side effect. A unique
+constraint rejects reuse of its ID, even after resolved operations.
+
+Historical `create` and disposable test journal events continue to
+be readable, without inventing consent. New CLI personal Create
+operations are also stamped `cli_typed`.
+
+### Windows validation required — no additional real mutation
+
+1. **Close JARVIS** and make a consistent SQLite backup before any
+   live invocation, because upgrading from schema v3 to v4 is a
+   persistent local database migration.
+2. `git pull --ff-only origin feat/tb-02-memory-knowledge`
+3. `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"` and
+   `.\.venv\Scripts\python.exe -m pytest -q`.
+4. `cd frontend; npm run build; cd ..`
+5. Verify `main.py --memory-operation` on previous confirmed
+   disposable Forget operation, expecting the historical
+   `confirmation_ref=null` (never retroactively filled).
+6. For a future new disposable personal operation, the returned
+   journal should contain a UUID-based `user-confirmation:...` ref,
+   method, and timestamp, bound to its operation ID, even after remote
+   Forget. No further live mutation is needed to validate this
+   migration or offline suite.
+
+**B-01d is not yet accepted** pending Windows validation and review.
+B-01 Product Done remains blocked until acceptance; B-02 is queued.
