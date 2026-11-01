@@ -12,6 +12,7 @@ from jarvis.memory.connection import validate_memory_url
 from jarvis.memory.journal import MemoryOperationJournal
 from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
 from jarvis.memory.sensitive import looks_like_credential
+from jarvis.conversation.create_decision import evaluate_direct_create
 
 
 class PersonalMemoryLifecycle:
@@ -29,9 +30,28 @@ class PersonalMemoryLifecycle:
         if (not isinstance(confirmation, PersonalMutationAuthorization)
                 or confirmation.action != "create"
                 or confirmation.target_memory_id is not None
-                or confirmation.method != "desktop_approved"
+                or confirmation.method not in {"desktop_approved", "user_direct_intent"}
                 or confirmation.conversation_id != str(UUID(conversation_id))):
             raise ValueError("missing_or_mismatched_create_approval")
+        if confirmation.method == "user_direct_intent":
+            message_id = confirmation.source_message_id
+            original = (
+                self.journal._store.verified_user_utterance(message_id, conversation_id)
+                if message_id is not None else None
+            )
+            decision = evaluate_direct_create(
+                original, classified_action="memory_create",
+            )
+            if (decision.result != "PERMITTED" or decision.content != content
+                    or decision.scope != scope):
+                raise ValueError("direct_create_not_authorized_by_user_message")
+            confirmation_ref = "user-message:" + message_id
+        else:
+            if confirmation.source_message_id is not None:
+                raise ValueError("invalid_desktop_approval_source")
+            confirmation_ref = (
+                f"user-confirmation:{confirmation.authorization_id}"
+            )
         if scope not in {"global", "project:jarvis"}:
             raise ValueError("invalid_create_scope")
         if looks_like_credential(content):
@@ -43,7 +63,7 @@ class PersonalMemoryLifecycle:
             "source_system": "jarvis",
             "source_ref": f"memory-operation:{operation_id}",
             "conversation_uuid": confirmation.conversation_id,
-            "confirmation_ref": f"user-confirmation:{confirmation.authorization_id}",
+            "confirmation_ref": confirmation_ref,
         }
         _payload(content, provenance)  # Check before any journal/network operation.
         payload = {
