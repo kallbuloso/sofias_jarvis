@@ -21,6 +21,10 @@ const memoryAuthorizationToken = ref('')
 const memoryRequiredPhrase = ref('')
 const memoryAuthorizationInput = ref('')
 const memoryMutationBusy = ref(false)
+const createProposal = ref(null)
+const createScope = ref('')
+const createDialog = ref(false)
+const createBusy = ref(false)
 const knowledgeNotice = ref('')
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
@@ -63,6 +67,9 @@ async function openConversation(id, preserveNotices = false) {
   if (id !== selected.value && memoryPreviewDialog.value) {
     await closeMemoryPreview()
   }
+  if (id !== selected.value && createDialog.value) {
+    await closeCreateProposal()
+  }
   selected.value = id
   const result = await call('listMessages', id)
   if (selected.value === id && result.ok) {
@@ -77,14 +84,15 @@ async function openConversation(id, preserveNotices = false) {
 
 function requestDeleteConversation(conversation) {
   if (busy.value || memoryPreviewBusy.value || memoryMutationBusy.value ||
-      deletionBusy.value) return
+      deletionBusy.value || createDialog.value || createBusy.value) return
   deletionTarget.value = conversation
 }
 
 async function confirmDeleteConversation() {
   const target = deletionTarget.value
   if (!target || deletionBusy.value || busy.value ||
-      memoryPreviewBusy.value || memoryMutationBusy.value) return
+      memoryPreviewBusy.value || memoryMutationBusy.value ||
+      createBusy.value || createDialog.value) return
   deletionBusy.value = true
   try {
     const result = await call('deleteConversation', target.id)
@@ -110,6 +118,7 @@ async function confirmDeleteConversation() {
 }
 
 async function createConversation() {
+  if (createDialog.value) await closeCreateProposal()
   try {
     const created = await call('createConversation')
     if (!created.ok) return
@@ -129,6 +138,25 @@ async function scrollToBottom() {
 function handleStream(raw) {
   let event
   try { event = JSON.parse(raw) } catch { return }
+  if (event.type === 'create_proposal') {
+    if (event.ok && event.conversationId === selected.value &&
+        event.authorizationToken && typeof event.content === 'string') {
+      createProposal.value = {
+        token: event.authorizationToken,
+        conversationId: event.conversationId,
+        content: event.content,
+        scope: event.scope,
+      }
+      createScope.value = event.scope || ''
+      createDialog.value = true
+    } else {
+      createProposal.value = null
+      createDialog.value = false
+      call('cancelConversationalCreate').catch(() => {})
+      warning.value = 'Não foi possível preparar a memória com segurança. Nada foi gravado.'
+    }
+    return
+  }
   if (event.type === 'memory_preview') {
     memoryPreviewBusy.value = false
     if (event.ok && event.preview && typeof event.preview.memory_id === 'string'
@@ -154,8 +182,16 @@ function handleStream(raw) {
     memoryAuthorizationToken.value = ''
     memoryAuthorizationInput.value = ''
     memoryRequiredPhrase.value = ''
+    if (event.action === 'create') {
+      createBusy.value = false
+      createDialog.value = false
+      createProposal.value = null
+      createScope.value = ''
+    }
     if (event.ok && event.status === 'CONFIRMED') {
-      memoryNotice.value = event.replacementMemoryId
+      memoryNotice.value = event.action === 'create'
+        ? 'Informação guardada no Sofias Memory com confirmação do serviço.'
+        : event.replacementMemoryId
         ? 'Memória substituída com confirmação do serviço. Novo UUID: ' + event.replacementMemoryId
         : 'Memória esquecida com confirmação do serviço.'
     } else {
@@ -214,6 +250,42 @@ function handleStream(raw) {
   }
   target.content += event.text
   scrollToBottom()
+}
+
+async function closeCreateProposal() {
+  if (createBusy.value) return
+  createDialog.value = false
+  createProposal.value = null
+  createScope.value = ''
+  try { await call('cancelConversationalCreate') } catch {}
+}
+
+async function confirmCreateProposal() {
+  const proposal = createProposal.value
+  if (!proposal || createBusy.value || !createScope.value ||
+      proposal.conversationId !== selected.value) return
+  createBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call(
+      'confirmConversationalCreate',
+      proposal.token, proposal.conversationId, createScope.value,
+    )
+    // Consume locally even when transport fails; do not retry blindly.
+    createProposal.value = null
+    if (!result.ok) {
+      createBusy.value = false
+      createDialog.value = false
+      warning.value = 'Autorização recusada: ' + (result.error || 'unknown') +
+        '. Nada deve ser repetido sem verificar o journal.'
+      await call('cancelConversationalCreate').catch(() => {})
+    }
+  } catch {
+    createBusy.value = false
+    createDialog.value = false
+    createProposal.value = null
+    warning.value = 'Resultado de envio incerto. Não repita sem consultar o journal.'
+  }
 }
 
 async function previewMemoryCommand(text) {
@@ -288,7 +360,9 @@ async function confirmMemoryMutation() {
 
 async function sendMessage() {
   const text = draft.value.trim()
-  if (!ready.value || busy.value || memoryPreviewBusy.value || memoryMutationBusy.value || !selected.value || !text) return
+  if (!ready.value || busy.value || memoryPreviewBusy.value ||
+      memoryMutationBusy.value || createDialog.value || createBusy.value ||
+      !selected.value || !text) return
   if (/^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)) {
     await previewMemoryCommand(text)
     return
@@ -363,7 +437,7 @@ onMounted(async () => {
             <template #append>
               <v-btn size="x-small" variant="text" color="error"
                 aria-label="Excluir conversa" title="Excluir esta conversa"
-                :disabled="busy || memoryPreviewBusy || memoryMutationBusy || deletionBusy"
+                :disabled="busy || memoryPreviewBusy || memoryMutationBusy || deletionBusy || createDialog || createBusy"
                 @click.stop="requestDeleteConversation(c)">
                 Excluir
               </v-btn>
@@ -444,10 +518,11 @@ onMounted(async () => {
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
               variant="outlined" density="comfortable" hide-details
-              label="Mensagem" :disabled="busy || memoryPreviewBusy || memoryMutationBusy || !ready"
+              label="Mensagem" :disabled="busy || memoryPreviewBusy || memoryMutationBusy || createDialog || createBusy || !ready"
               @keydown.ctrl.enter.prevent="sendMessage"/>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
               :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy || memoryMutationBusy ||
+                createDialog || createBusy ||
                 (!model.trim() && !draft.trim().startsWith('/'))"
               @click="sendMessage">Enviar</v-btn>
           </div>
@@ -468,6 +543,37 @@ onMounted(async () => {
             @click="deletionTarget = null">Cancelar</v-btn>
           <v-btn color="error" :loading="deletionBusy" :disabled="deletionBusy"
             @click="confirmDeleteConversation">Excluir conversa</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+    <v-dialog v-model="createDialog" max-width="620" persistent>
+      <v-card v-if="createProposal" title="Guardar esta informação?">
+        <v-card-text>
+          <p>O JARVIS identificou um pedido para lembrar uma informação.</p>
+          <div class="memory-preview-content">{{ createProposal.content }}</div>
+          <p class="memory-preview-disclaimer">
+            Confira o conteúdo e o alcance antes de autorizar.
+            Nenhuma informação foi gravada até agora.
+          </p>
+          <div v-if="createProposal.scope" class="source-meta">
+            Alcance: {{ createProposal.scope === 'global'
+              ? 'Preferência geral' : 'Projeto JARVIS' }}
+          </div>
+          <div v-else>
+            <p>Essa informação vale para qual contexto?</p>
+            <v-radio-group v-model="createScope" :disabled="createBusy">
+              <v-radio label="Minha preferência geral" value="global" />
+              <v-radio label="Somente para o projeto JARVIS" value="project:jarvis" />
+            </v-radio-group>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="createBusy"
+            @click="closeCreateProposal">Não guardar</v-btn>
+          <v-btn color="primary" :loading="createBusy"
+            :disabled="createBusy || !createScope"
+            @click="confirmCreateProposal">Guardar informação</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
