@@ -274,7 +274,7 @@ class JarvisBridge(QObject):
         worker.knowledgeDone.connect(self._on_knowledge_done)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(lambda: self._on_thread_finished(thread))
+        thread.finished.connect(self._on_thread_finished)
         thread.start()
         return _json({"ok": True, "conversationId": conversation_id})
 
@@ -310,8 +310,11 @@ class JarvisBridge(QObject):
             "memoryStatus": memory_status,
         }))
 
-    def _on_thread_finished(self, thread: QThread) -> None:
-        if self._thread is not thread:
+    @Slot()
+    def _on_thread_finished(self) -> None:
+        """QThread.finished is delivered to this bridge on its GUI thread."""
+        thread = self._thread
+        if thread is None:
             return
         self._thread = None
         self._worker = None
