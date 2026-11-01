@@ -172,6 +172,22 @@ class SQLiteConversationStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """Delete only local transcript/evidence for the exact conversation.
+
+        Cognitive Memory and immutable operational journal remain untouched.
+        SQLite cascades message_knowledge_evidence through messages.
+        """
+        try:
+            conversation_id = str(UUID(conversation_id))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        with self._connection() as db:
+            removed = db.execute(
+                "DELETE FROM conversations WHERE id=?", (conversation_id,),
+            )
+            return removed.rowcount == 1
+
     def get_conversation(self, conversation_id: str) -> dict | None:
         with self._connection() as db:
             row = db.execute(
