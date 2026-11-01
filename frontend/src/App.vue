@@ -64,6 +64,7 @@ async function refreshConversations() {
 }
 
 async function openConversation(id, preserveNotices = false) {
+  if (createBusy.value || memoryMutationBusy.value) return
   if (id !== selected.value && memoryPreviewDialog.value) {
     await closeMemoryPreview()
   }
@@ -118,6 +119,7 @@ async function confirmDeleteConversation() {
 }
 
 async function createConversation() {
+  if (createBusy.value || memoryMutationBusy.value || busy.value) return
   if (createDialog.value) await closeCreateProposal()
   try {
     const created = await call('createConversation')
@@ -427,7 +429,7 @@ onMounted(async () => {
       <v-navigation-drawer permanent width="285" color="surface">
         <div class="sidebar-heading">
           <div class="brand">JARVIS <span>TB-02</span></div>
-          <v-btn block color="primary" variant="flat" :disabled="!ready" @click="createConversation">
+          <v-btn block color="primary" variant="flat" :disabled="!ready || busy || createBusy || memoryMutationBusy" @click="createConversation">
             Nova conversa
           </v-btn>
         </div>
