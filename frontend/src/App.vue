@@ -18,6 +18,10 @@ const memoryPreviewBusy = ref(false)
 const memoryPreviewDialog = ref(false)
 const memoryPreview = ref(null)
 const memoryPreviewReplacement = ref('')
+const memoryAuthorizationToken = ref('')
+const memoryRequiredPhrase = ref('')
+const memoryAuthorizationInput = ref('')
+const memoryMutationBusy = ref(false)
 const useKnowledge = ref(false)
 const knowledgeDataset = ref('')
 const knowledgeNotice = ref('')
@@ -85,6 +89,9 @@ async function refreshConversations() {
 }
 
 async function openConversation(id, preserveNotices = false) {
+  if (id !== selected.value && memoryPreviewDialog.value) {
+    await closeMemoryPreview()
+  }
   selected.value = id
   const result = await call('listMessages', id)
   if (selected.value === id && result.ok) {
@@ -121,13 +128,38 @@ function handleStream(raw) {
   try { event = JSON.parse(raw) } catch { return }
   if (event.type === 'memory_preview') {
     memoryPreviewBusy.value = false
-    if (event.ok && event.preview && typeof event.preview.memory_id === 'string') {
+    if (event.ok && event.preview && typeof event.preview.memory_id === 'string'
+        && event.conversationId === selected.value && event.authorizationToken
+        && event.requiredPhrase) {
       memoryPreview.value = { ...event.preview, action: event.action }
+      memoryAuthorizationToken.value = event.authorizationToken
+      memoryRequiredPhrase.value = event.requiredPhrase
+      memoryAuthorizationInput.value = ''
       memoryPreviewDialog.value = true
     } else {
       memoryPreview.value = null
-      warning.value = 'Não foi possível validar o alvo da operação de memória (' +
-        (event.error || 'preview_unavailable') + '). Nenhuma alteração foi realizada.'
+      memoryAuthorizationToken.value = ''
+      call('cancelPendingPersonalMutation').catch(() => {})
+      warning.value = 'Prévia não autorizada ou contexto alterado. Nenhuma memória foi modificada.'
+    }
+    return
+  }
+  if (event.type === 'memory_mutation') {
+    memoryMutationBusy.value = false
+    memoryPreviewDialog.value = false
+    memoryPreview.value = null
+    memoryAuthorizationToken.value = ''
+    memoryAuthorizationInput.value = ''
+    memoryRequiredPhrase.value = ''
+    if (event.ok && event.status === 'CONFIRMED') {
+      memoryNotice.value = event.replacementMemoryId
+        ? 'Memória substituída com confirmação do serviço. Novo UUID: ' + event.replacementMemoryId
+        : 'Memória esquecida com confirmação do serviço.'
+    } else {
+      warning.value = event.status === 'RESULT_UNKNOWN'
+        ? 'Resultado da operação é incerto. NÃO repita: é necessário reconciliar pelo journal.'
+        : 'A alteração não foi confirmada (' + (event.status || event.error || 'unknown') +
+          '). Não houve repetição automática.'
     }
     return
   }
@@ -199,7 +231,8 @@ async function previewMemoryCommand(text) {
   memoryPreviewReplacement.value = replacement
   memoryPreviewBusy.value = true
   try {
-    const result = await call('previewPersonalMemory', action, memoryId)
+    const result = await call('previewPersonalMutation', action, memoryId,
+      replacement, selected.value)
     if (!result.ok) {
       memoryPreviewBusy.value = false
       warning.value = 'Prévia recusada: ' + (result.error || 'unavailable')
@@ -212,9 +245,44 @@ async function previewMemoryCommand(text) {
   }
 }
 
+async function closeMemoryPreview() {
+  if (memoryMutationBusy.value) return
+  memoryPreviewDialog.value = false
+  memoryPreview.value = null
+  memoryAuthorizationToken.value = ''
+  memoryRequiredPhrase.value = ''
+  memoryAuthorizationInput.value = ''
+  memoryPreviewReplacement.value = ''
+  try { await call('cancelPendingPersonalMutation') } catch {}
+}
+
+async function confirmMemoryMutation() {
+  if (!memoryPreview.value || memoryMutationBusy.value ||
+      memoryAuthorizationInput.value !== memoryRequiredPhrase.value ||
+      !memoryAuthorizationToken.value) return
+  memoryMutationBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call('confirmPersonalMutation',
+      memoryAuthorizationToken.value, memoryAuthorizationInput.value, selected.value)
+    memoryAuthorizationToken.value = '' // No local replay, even on error.
+    if (!result.ok) {
+      memoryMutationBusy.value = false
+      warning.value = 'Autorização recusada (' + (result.error || 'unknown') +
+        '). Será necessária uma nova prévia.'
+      await closeMemoryPreview()
+    }
+  } catch {
+    memoryAuthorizationToken.value = ''
+    memoryMutationBusy.value = false
+    warning.value = 'Não foi possível confirmar o envio. Não repita sem verificar o journal.'
+    await closeMemoryPreview()
+  }
+}
+
 async function sendMessage() {
   const text = draft.value.trim()
-  if (!ready.value || busy.value || memoryPreviewBusy.value || !selected.value || !text) return
+  if (!ready.value || busy.value || memoryPreviewBusy.value || memoryMutationBusy.value || !selected.value || !text) return
   if (/^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)) {
     await previewMemoryCommand(text)
     return
@@ -384,16 +452,16 @@ onMounted(async () => {
             </details>
           </div>
           <div class="memory-command-hint">
-            Comandos supervisionados (prévia somente): /esquecer UUID
+            Comandos supervisionados: /esquecer UUID
             ou /atualizar UUID | nova informação.
           </div>
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
               variant="outlined" density="comfortable" hide-details
-              label="Mensagem" :disabled="busy || memoryPreviewBusy || !ready"
+              label="Mensagem" :disabled="busy || memoryPreviewBusy || memoryMutationBusy || !ready"
               @keydown.ctrl.enter.prevent="sendMessage"/>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
-              :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy ||
+              :disabled="!ready || !selected || !draft.trim() || busy || memoryPreviewBusy || memoryMutationBusy ||
                 (!model.trim() && !draft.trim().startsWith('/'))"
               @click="sendMessage">Enviar</v-btn>
           </div>
@@ -401,7 +469,7 @@ onMounted(async () => {
       </v-main>
     </v-layout>
     <v-dialog v-model="memoryPreviewDialog" max-width="700" persistent>
-      <v-card v-if="memoryPreview" title="Prévia da memória — somente leitura">
+      <v-card v-if="memoryPreview" title="Confirmação supervisionada da memória">
         <v-card-text>
           <p>Operação solicitada: <strong>{{ memoryPreview.action === 'forget' ? 'Esquecer' : 'Substituir' }}</strong></p>
           <p>UUID: <code>{{ memoryPreview.memory_id }}</code></p>
@@ -414,14 +482,27 @@ onMounted(async () => {
             <div class="memory-preview-content">{{ memoryPreviewReplacement }}</div>
           </template>
           <p class="memory-preview-disclaimer">
-            Esta etapa é apenas uma consulta. Não há autorização nem
-            execução de alterações neste painel.
+            A prévia não modifica nada. Para autorizar a operação REAL e persistente,
+            digite exatamente a frase abaixo. A autorização vale apenas para esta prévia.
+            No esquecimento, o conteúdo será eliminado permanentemente.
           </p>
+          <div class="source-meta">Confirmação necessária: {{ memoryRequiredPhrase }}</div>
+          <v-text-field v-model="memoryAuthorizationInput"
+            label="Digite a confirmação exata"
+            variant="outlined" density="compact" autocomplete="off"
+            :disabled="memoryMutationBusy"/>
+
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn color="primary" @click="memoryPreviewDialog = false">
+          <v-btn variant="text" :disabled="memoryMutationBusy" @click="closeMemoryPreview">
             Fechar sem alterar
+          </v-btn>
+          <v-btn color="error" :loading="memoryMutationBusy"
+            :disabled="memoryMutationBusy || !memoryAuthorizationToken ||
+              memoryAuthorizationInput !== memoryRequiredPhrase"
+            @click="confirmMemoryMutation">
+            {{ memoryPreview.action === 'forget' ? 'Confirmar esquecimento' : 'Confirmar substituição' }}
           </v-btn>
         </v-card-actions>
       </v-card>
