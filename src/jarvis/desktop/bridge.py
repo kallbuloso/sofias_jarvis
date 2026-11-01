@@ -444,6 +444,8 @@ class JarvisBridge(QObject):
 
     @Slot(result=str)
     def cancelPendingPersonalMutation(self) -> str:
+        if self._mutation_thread is not None:
+            return _json({"ok": False, "error": "mutation_in_progress"})
         self._mutation_gate.clear()
         return _json({"ok": True, "status": "CANCELLED"})
 
