@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from contextlib import closing
 from uuid import UUID
+from jarvis.memory.personal_confirmation import PersonalMutationGate
+from jarvis.memory.sensitive import looks_like_credential
 import json
 import os
 import threading
@@ -157,10 +159,14 @@ class MemoryPreviewWorker(QObject):
     """Read-only remote preview; no mutation methods or execution token."""
     finishedPreview = Signal(str)
 
-    def __init__(self, action: str, memory_id: str):
+    def __init__(self, action: str, memory_id: str, *,
+                 replacement: str = "", conversation_id: str | None = None):
         super().__init__()
         self.action = action
         self.memory_id = memory_id
+        self.replacement = replacement
+        self.conversation_id = conversation_id
+        self.full_preview: dict | None = None
 
     @Slot()
     def run(self) -> None:
@@ -184,6 +190,7 @@ class MemoryPreviewWorker(QObject):
                 client, MemoryOperationJournal(database_path()), url,
             )
             preview = lifecycle.preview(self.memory_id, action=self.action)
+            self.full_preview = preview
             result = {"ok": True, "action": self.action, "preview": {
                 "memory_id": preview["memory_id"],
                 "memory_type": preview["memory_type"],
@@ -198,6 +205,55 @@ class MemoryPreviewWorker(QObject):
         self.finishedPreview.emit(_json(result))
 
 
+class MemoryMutationWorker(QObject):
+    """Executes precisely one consumed owner-confirmed operation on its own thread."""
+    finishedMutation = Signal(str)
+
+    def __init__(self, pending):
+        super().__init__()
+        self.pending = pending
+
+    @Slot()
+    def run(self) -> None:
+        trace("personal_mutation_begin", action=self.pending.action)
+        try:
+            from jarvis.memory.cognitive import CognitiveMemoryClient
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+            url = configured_memory_url()
+            if not url:
+                raise ValueError("memory_not_configured")
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                raise ValueError("memory_key_missing")
+            client = CognitiveMemoryClient(url, key)
+            if client.diagnose().get("status") != "COMPATIBLE":
+                raise ValueError("memory_contract_incompatible")
+            lifecycle = PersonalMemoryLifecycle(
+                client, MemoryOperationJournal(database_path()), url,
+            )
+            result = (lifecycle.supersede(self.pending.preview,
+                                          new_content=self.pending.replacement)
+                      if self.pending.action == "supersede"
+                      else lifecycle.forget(self.pending.preview))
+            safe = {
+                "ok": result.get("status") == "CONFIRMED",
+                "status": result.get("status", "RESULT_UNKNOWN"),
+                "operationId": result.get("operation_id"),
+                "memoryId": result.get("memory_id"),
+                "replacementMemoryId": result.get("replacement_memory_id"),
+                "retryAutomatically": False,
+            }
+        except Exception as exc:
+            # Never propagate raw exceptions, SDK errors, prompts or credentials.
+            safe = {"ok": False, "status": "NOT_CONFIRMED",
+                    "error": type(exc).__name__, "retryAutomatically": False}
+        trace("personal_mutation_end", ok=bool(safe["ok"]), action=self.pending.action)
+        self.finishedMutation.emit(_json(safe))
+
+
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
 
@@ -210,13 +266,17 @@ class JarvisBridge(QObject):
         self._window = None
         self._preview_worker: MemoryPreviewWorker | None = None
         self._preview_thread: QThread | None = None
+        self._mutation_gate = PersonalMutationGate()
+        self._mutation_thread: QThread | None = None
+        self._mutation_worker: MemoryMutationWorker | None = None
 
     def attach_window(self, window) -> None:
         self._window = window
 
     @property
     def active(self) -> bool:
-        return self._thread is not None or self._preview_thread is not None
+        return (self._thread is not None or self._preview_thread is not None
+                or self._mutation_thread is not None)
 
     @Slot(result=str)
     def bootstrap(self) -> str:
@@ -306,6 +366,7 @@ class JarvisBridge(QObject):
             target_id = str(UUID(memory_id))
         except (TypeError, ValueError, AttributeError):
             return _json({"ok": False, "error": "invalid_memory_id"})
+        self._mutation_gate.clear()
         worker = MemoryPreviewWorker(action, target_id)
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -320,12 +381,115 @@ class JarvisBridge(QObject):
         thread.start()
         return _json({"ok": True, "status": "PREVIEW_REQUESTED"})
 
+    @Slot(str, str, str, str, result=str)
+    def previewPersonalMutation(self, action: str, memory_id: str,
+                                replacement: str, conversation_id: str) -> str:
+        """Start a confirmed-owner preview; no mutation until typed consent."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        self._mutation_gate.clear()
+        if action not in {"supersede", "forget"}:
+            return _json({"ok": False, "error": "invalid_action"})
+        try:
+            target_id = str(UUID(memory_id))
+            conv_id = str(UUID(conversation_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_identifier"})
+        if self._store.get_conversation(conv_id) is None:
+            return _json({"ok": False, "error": "unknown_conversation"})
+        if (not isinstance(replacement, str)
+                or (action == "forget" and replacement)
+                or (action == "supersede" and (
+                    not replacement.strip() or len(replacement) > 16384
+                    or looks_like_credential(replacement)))):
+            return _json({"ok": False, "error": "invalid_or_sensitive_replacement"})
+        worker = MemoryPreviewWorker(action, target_id,
+                                     replacement=replacement,
+                                     conversation_id=conv_id)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._preview_worker = worker
+        self._preview_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedPreview.connect(self._on_memory_preview)
+        worker.finishedPreview.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_preview_thread_finished)
+        trace("personal_preview_thread_starting", action=action)
+        thread.start()
+        return _json({"ok": True, "status": "PREVIEW_REQUESTED"})
+
+    @Slot(str, str, str, result=str)
+    def confirmPersonalMutation(self, token: str, phrase: str,
+                                conversation_id: str) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            pending = self._mutation_gate.consume(token, phrase, conversation_id)
+        except (ValueError, KeyError, TypeError):
+            return _json({"ok": False, "error": "authorization_invalid_or_expired"})
+        worker = MemoryMutationWorker(pending)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._mutation_worker = worker
+        self._mutation_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedMutation.connect(self._on_memory_mutation)
+        worker.finishedMutation.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_mutation_thread_finished)
+        trace("personal_mutation_thread_starting", action=pending.action)
+        thread.start()
+        return _json({"ok": True, "status": "MUTATION_REQUESTED"})
+
+    @Slot(result=str)
+    def cancelPendingPersonalMutation(self) -> str:
+        self._mutation_gate.clear()
+        return _json({"ok": True, "status": "CANCELLED"})
+
+    @Slot(str)
+    def _on_memory_mutation(self, raw_result: str) -> None:
+        try:
+            payload = json.loads(raw_result)
+        except (ValueError, TypeError):
+            payload = {"ok": False, "status": "RESULT_UNKNOWN",
+                       "retryAutomatically": False}
+        self.streamEvent.emit(_json({"type": "memory_mutation", **payload}))
+
+    @Slot()
+    def _on_mutation_thread_finished(self) -> None:
+        trace("personal_mutation_thread_finished",
+              in_gui_thread=QThread.currentThread() == self.thread())
+        thread = self._mutation_thread
+        if thread is None:
+            return
+        self._mutation_thread = None
+        self._mutation_worker = None
+        thread.deleteLater()
+        if self._closing and self._window is not None and not self.active:
+            QTimer.singleShot(0, self._window.close)
+
     @Slot(str)
     def _on_memory_preview(self, raw_result: str) -> None:
         try:
             data = json.loads(raw_result)
         except (ValueError, TypeError):
             data = {"ok": False, "error": "invalid_preview_result"}
+        worker = self._preview_worker
+        if (data.get("ok") and worker is not None
+                and worker.conversation_id is not None
+                and worker.full_preview is not None):
+            try:
+                token, phrase = self._mutation_gate.offer(
+                    worker.action, worker.full_preview, worker.replacement,
+                    worker.conversation_id,
+                )
+                data.update({"authorizationToken": token,
+                             "requiredPhrase": phrase,
+                             "conversationId": worker.conversation_id})
+            except (ValueError, KeyError, TypeError):
+                self._mutation_gate.clear()
+                data = {"ok": False, "error": "preview_authorization_invalid"}
         self.streamEvent.emit(_json({"type": "memory_preview", **data}))
 
     @Slot()
@@ -435,6 +599,7 @@ class JarvisBridge(QObject):
 
     def request_shutdown(self) -> None:
         trace("bridge_shutdown_requested", worker_active=self.active)
+        self._mutation_gate.clear()
         self._closing = True
         if self._worker is not None:
             self._worker.cancelled.set()
