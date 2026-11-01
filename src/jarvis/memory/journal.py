@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import UUID
 
 from jarvis.conversation.store import SQLiteConversationStore, _now
+from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
 from jarvis.memory.connection import validate_memory_url
 
 
@@ -21,6 +22,7 @@ class MemoryOperationJournal:
     def prepare(
         self, operation_id: str, service_url: str, payload: dict, *,
         kind: str = "create", target_memory_id: str | None = None,
+        confirmation: PersonalMutationAuthorization | None = None,
     ) -> None:
         """Record intent before network effects; restrict test mutations and user-owned targets independently."""
         operation_id = str(UUID(operation_id))
@@ -42,6 +44,33 @@ class MemoryOperationJournal:
             or payload.get("provenance", {}).get("source_ref") != f"jarvis-tb02-test:{operation_id}"
         ):
             raise ValueError("invalid_test_create")
+        # Bind the consent receipt to this operation in the SAME SQLite commit.
+        # Do not store raw typed text, UI token, credential, or personal content.
+        confirmation_ref = None
+        confirmation_method = None
+        confirmation_conversation = None
+        confirmed_by_user_at = None
+        if kind in {"user_supersede", "user_forget"} and confirmation is None:
+            raise ValueError("user_mutation_requires_typed_confirmation")
+        if confirmation is not None:
+            if not isinstance(confirmation, PersonalMutationAuthorization):
+                raise ValueError("invalid_typed_confirmation_receipt")
+            expected_action = {
+                "user_supersede": "supersede", "user_forget": "forget",
+                "create": "create",
+            }.get(kind)
+            if (expected_action is None or confirmation.action != expected_action
+                    or confirmation.target_memory_id != target_memory_id
+                    or confirmation.method not in {"desktop_typed", "cli_typed"}
+                    or (confirmation.method == "desktop_typed"
+                        and confirmation.conversation_id is None)
+                    or (confirmation.method == "cli_typed"
+                        and confirmation.conversation_id is not None)):
+                raise ValueError("confirmation_does_not_match_operation")
+            confirmation_ref = "user-confirmation:" + str(UUID(confirmation.authorization_id))
+            confirmation_method = confirmation.method
+            confirmation_conversation = confirmation.conversation_id
+            confirmed_by_user_at = _now()
         serialized = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         now = _now()
         with self._store._connection() as db:
@@ -81,9 +110,12 @@ class MemoryOperationJournal:
             db.execute(
                 "INSERT INTO cognitive_write_operations "
                 "(id,service_url,payload_json,status,memory_id,error_code,created_at,updated_at,"
-                "operation_kind,target_memory_id)"
-                " VALUES (?,?,?,'prepared',NULL,NULL,?,?,?,?)",
-                (operation_id, service_url, serialized, now, now, kind, target_memory_id),
+                "operation_kind,target_memory_id,confirmation_ref,confirmation_method,"
+                "confirmation_conversation_id,confirmed_by_user_at)"
+                " VALUES (?,?,?,'prepared',NULL,NULL,?,?,?,?,?,?,?,?)",
+                (operation_id, service_url, serialized, now, now, kind, target_memory_id,
+                 confirmation_ref, confirmation_method, confirmation_conversation,
+                 confirmed_by_user_at),
             )
 
     def claim(self, operation_id: str) -> dict:
@@ -137,7 +169,9 @@ class MemoryOperationJournal:
         operation_id = str(UUID(operation_id))
         with self._store._connection() as db:
             row = db.execute(
-                "SELECT id,status,memory_id,error_code,created_at,updated_at"
+                "SELECT id,status,memory_id,error_code,created_at,updated_at,"
+                "confirmation_ref,confirmation_method,confirmation_conversation_id,"
+                "confirmed_by_user_at"
                 " FROM cognitive_write_operations WHERE id=?",
                 (operation_id,),
             ).fetchone()
