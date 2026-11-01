@@ -28,7 +28,10 @@ _GROUNDING_POLICY = (
     "não esteja demonstrada pelo contexto disponível, admita a incerteza "
     "e proponha verificar a fonte apropriada. "
     "Se nenhum dado de memória foi recuperado neste turno, não afirme "
-    "que consultou ou verificou o Sofias Memory."
+    "que consultou ou verificou o Sofias Memory. "
+    "Nunca afirme que criou, atualizou, esqueceu ou agendou algo sem "
+    "um resultado operacional confirmado pelo JARVIS; uma resposta "
+    "do modelo não é comprovante de execução."
 )
 
 
