@@ -363,3 +363,29 @@ separately tested one-use authorization/execute path, plus supervised
 Create; only thereafter B-01 Product Done review. B-02 remains pending.
 The prior Qt crash regression is still observed during desktop smoke.
 No merge to main, no TB-03.
+
+## 15. TB-02 B-01b accepted; B-01c code pending Windows validation
+
+The owner confirmed the desktop read-only preview operated correctly
+and the prior personal `global/profile` teal record was unchanged and
+`active` before and after the interaction. B-01b visual acceptance = PASS.
+
+B-01c implementation on the feature branch adds an expiring,
+single-use, conversation-bound authorization token and an exact
+typed `SUBSTITUIR UUID` / `ESQUECER UUID` phrase. The GUI preview
+now provides a separate, explicitly labeled confirmation button.
+The intent is consumed before a Qt worker performs an ownership and
+remote-state recheck via `PersonalMemoryLifecycle`, with journal
+persistence/idempotency. The old preview-only WebChannel method
+remains available. Cancellation works only while an operation is
+pending; committed requests are not silently cancelled or replayed.
+
+Five offline tests were added over the latest accepted 189-test
+baseline. Expected local result: **194 passed** (not executed yet).
+Frontend build and human smoke are also pending.
+
+Do not operate on the preserved teal memory. Any real mutation
+verification requires a newly created, authorized disposable personal
+record after static and cancel-only tests pass. B-01 is not Product
+Done. B-02 remains scheduled for the next increment; no merge/main,
+no TB-03.
