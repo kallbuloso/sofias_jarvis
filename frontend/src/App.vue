@@ -100,7 +100,6 @@ async function confirmDeleteConversation() {
       } else {
         selected.value = ''
         messages.value = []
-        await createConversation()
       }
     }
   } catch {
@@ -337,7 +336,10 @@ onMounted(async () => {
     credentialConfigured.value = initial.credentialConfigured
     ready.value = true
     if (conversations.value.length) await openConversation(conversations.value[0].id)
-    else await createConversation()
+    else {
+      selected.value = ''
+      messages.value = []
+    }
   } catch {
     warning.value = 'Não foi possível inicializar a interface.'
   }
