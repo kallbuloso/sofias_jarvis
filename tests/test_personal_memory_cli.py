@@ -51,6 +51,11 @@ def setup(monkeypatch, tmp_path):
             assert url == self.base_url and key == "PRIVATE-KEY"
         def diagnose(self):
             return {"status": "COMPATIBLE"}
+        def create(self, *, memory_type, scope, content, provenance, idempotency_key):
+            calls.append("create")
+            return {"memory_id": str(uuid4()), "scope": scope,
+                    "memory_type": memory_type, "content": content,
+                    "provenance": provenance}
         def get(self, memory_id):
             calls.append("get")
             return dict(record)
@@ -116,3 +121,23 @@ def test_supersede_requires_literal_uuid_and_preserves_journal(monkeypatch, caps
     assert audit["confirmation_method"] == "cli_typed"
     assert audit["confirmed_by_user_at"] is not None
     assert calls == ["get", "get", "supersede"]
+
+
+def test_create_cli_persists_typed_consent_without_raw_phrase(monkeypatch, capsys, setup):
+    _, journal, calls = setup
+    answers = iter(["JARVIS registro pessoal de laboratório", "GRAVAR"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    monkeypatch.setattr(sys, "argv", [
+        "main.py", "--memory-create", "--memory-scope", "project:jarvis",
+        "--memory-type", "semantic",
+    ])
+    assert main_module().main() == 0
+    output = capsys.readouterr().out
+    outcome = json.loads(output[output.rfind("{"):])
+    assert outcome["status"] == "CONFIRMED"
+    audit = journal.get(outcome["operation_id"])
+    assert audit["confirmation_method"] == "cli_typed"
+    assert audit["confirmation_ref"].startswith("user-confirmation:")
+    assert audit["confirmed_by_user_at"]
+    assert calls == ["create"]
+    assert "GRAVAR" not in json.dumps(audit)
