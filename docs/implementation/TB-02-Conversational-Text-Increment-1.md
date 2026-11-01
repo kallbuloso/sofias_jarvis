@@ -101,3 +101,25 @@ Human smoke (after automated tests):
 No migration beyond previously accepted SQLite v5 and no automatic
 external mutating call. **Not Product Done**. Never merge to main
 without a separate owner decision.
+
+## Windows regression run — dataset fixture alignment (2026-11-01)
+
+Owner ran the full offline test suite on Windows. Observed:
+**234 passed, 1 failed in 9.78 s**. Only
+`test_natural_text_knowledge_query_retrieves_sources_without_switch`
+failed: assistant message status `failed` instead of `completed`.
+
+Audit of test and production Knowledge provider found a precise
+test-double mismatch: `KnowledgeAwareTextProvider._dataset_id()`
+correctly enforces fixed approved dataset
+`slug=jarvis-knowledge`, `name=JARVIS Knowledge`, `status=active`;
+the newly authored conversational mock returned
+`name=JARVIS`. That correctly triggered
+`knowledge_dataset_not_active` and prevented retrieval.
+**Production dataset guard remains unchanged.**
+
+Repair updated only `tests/test_text_conversational_desktop.py`:
+the fixture now returns `JARVIS Knowledge` and the test additionally
+asserts worker `done` status and `evidencePersistence=SAVED` when
+the mocked retrieval succeeds. Await fresh Windows pytest and
+frontend build; **do not claim 235 passed or desktop smoke completed**.
