@@ -8,6 +8,7 @@ import pytest
 
 from jarvis.conversation.store import SQLiteConversationStore
 from jarvis.memory.journal import MemoryOperationJournal
+from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
 
 
 def new_intent(scope="global"):
@@ -128,3 +129,82 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
     assert reopened.claim(op_id)["payload"] == payload
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+
+
+def test_legacy_journal_does_not_invent_authorization(tmp_path):
+    journal = MemoryOperationJournal(tmp_path / "jarvis.sqlite3")
+    operation_id, payload = new_intent()
+    journal.prepare(operation_id, "https://memory.example", payload)
+    journal.claim(operation_id)
+    journal.resolve(operation_id, status="confirmed", memory_id=str(uuid4()))
+    record = journal.get(operation_id)
+    assert record["confirmation_ref"] is None
+    assert record["confirmed_by_user_at"] is None
+    assert record["confirmation_method"] is None
+
+
+def test_audit_receipt_is_atomic_with_prepared_intent(tmp_path):
+    path = tmp_path / "jarvis.sqlite3"
+    journal = MemoryOperationJournal(path)
+    owner_id, owner_payload = new_intent()
+    journal.prepare(owner_id, "https://memory.example", owner_payload)
+    journal.claim(owner_id)
+    target = str(uuid4())
+    journal.resolve(owner_id, status="confirmed", memory_id=target)
+
+    mutation_id = str(uuid4())
+    receipt = PersonalMutationAuthorization.from_typed_confirmation(
+        action="forget", target_memory_id=target,
+        phrase="ESQUECER " + target, method="cli_typed",
+    )
+    with pytest.raises(ValueError, match="requires_typed_confirmation"):
+        journal.prepare(mutation_id, "https://memory.example",
+                        {"idempotency_key": mutation_id, "memory_id": target},
+                        kind="user_forget", target_memory_id=target)
+
+    assert journal.get(mutation_id) is None
+    journal.prepare(mutation_id, "https://memory.example",
+                    {"idempotency_key": mutation_id, "memory_id": target},
+                    kind="user_forget", target_memory_id=target,
+                    confirmation=receipt)
+    entry = journal.get(mutation_id)
+    assert entry["status"] == "prepared"
+    assert entry["confirmation_ref"] == "user-confirmation:" + receipt.authorization_id
+    assert entry["confirmation_method"] == "cli_typed"
+    assert entry["confirmed_by_user_at"]
+    journal.claim(mutation_id)
+    journal.resolve(mutation_id, status="confirmed", memory_id=target)
+    restarted = MemoryOperationJournal(path).get(mutation_id)
+    assert restarted["confirmation_ref"] == entry["confirmation_ref"]
+    with sqlite3.connect(path) as db:
+        row = db.execute(
+            "SELECT payload_json FROM cognitive_write_operations WHERE id=?",
+            (mutation_id,),
+        ).fetchone()
+    assert row[0] is None
+
+
+def test_authorization_receipt_cannot_be_reused(tmp_path):
+    journal = MemoryOperationJournal(tmp_path / "jarvis.sqlite3")
+    owner_id, payload = new_intent()
+    journal.prepare(owner_id, "https://memory.example", payload)
+    journal.claim(owner_id)
+    target = str(uuid4())
+    journal.resolve(owner_id, status="confirmed", memory_id=target)
+    consent = PersonalMutationAuthorization.from_typed_confirmation(
+        action="forget", target_memory_id=target,
+        phrase="ESQUECER " + target, method="cli_typed",
+    )
+
+    def make_intent(op):
+        journal.prepare(op, "https://memory.example",
+                        {"idempotency_key": op, "memory_id": target},
+                        kind="user_forget", target_memory_id=target,
+                        confirmation=consent)
+
+    first = str(uuid4())
+    make_intent(first)
+    journal.claim(first)
+    journal.resolve(first, status="rejected", error_code="TEST_REJECTED")
+    with pytest.raises(sqlite3.IntegrityError):
+        make_intent(str(uuid4()))
