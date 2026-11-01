@@ -46,6 +46,7 @@ class ReplyWorker(QObject):
         self.knowledge_dataset = knowledge_dataset
         self.conversational = conversational
         self.routing_status = "NOT_REQUESTED"
+        self.create_proposal: dict | None = None
         self.cancelled = threading.Event()
 
     @Slot()
@@ -76,15 +77,22 @@ class ReplyWorker(QObject):
                         self.memory_scope = intent.scope or "global"
                     elif intent.action == "knowledge_query":
                         self.knowledge_dataset = "jarvis-knowledge"
+                    elif intent.action == "memory_create":
+                        self.create_proposal = {
+                            "content": intent.content, "scope": intent.scope,
+                        }
+                        prepared_answer = (
+                            "Entendi que você deseja guardar essa informação. "
+                            "Confira a proposta de registro e autorize se estiver "
+                            "correta. Ainda não gravei nenhuma memória."
+                        )
                     elif intent.action == "reminder_request":
                         prepared_answer = (
                             "Entendi que você quer um lembrete agendado. "
                             "O scheduler e as notificações ainda não estão disponíveis "
                             "nesta versão. Não agendei nenhum lembrete."
                         )
-                    elif intent.action in {
-                        "memory_create", "memory_update", "memory_forget",
-                    }:
+                    elif intent.action in {"memory_update", "memory_forget"}:
                         prepared_answer = (
                             "Entendi seu pedido sobre a memória cognitiva. "
                             "A etapa de confirmação por linguagem natural ainda "
@@ -342,6 +350,8 @@ class JarvisBridge(QObject):
         self._preview_worker: MemoryPreviewWorker | None = None
         self._preview_thread: QThread | None = None
         self._mutation_gate = PersonalMutationGate()
+        from jarvis.memory.personal_confirmation import PersonalCreateGate
+        self._create_gate = PersonalCreateGate()
         self._mutation_thread: QThread | None = None
         self._mutation_worker: MemoryMutationWorker | None = None
 
@@ -395,6 +405,7 @@ class JarvisBridge(QObject):
         except (TypeError, ValueError, AttributeError):
             return _json({"ok": False, "error": "invalid_conversation"})
         self._mutation_gate.clear()
+        self._create_gate.clear()
         deleted = self._store.delete_conversation(conversation_id)
         return _json({"ok": deleted, "error": None if deleted else "unknown_conversation"})
 
@@ -542,6 +553,39 @@ class JarvisBridge(QObject):
         thread.start()
         return _json({"ok": True, "status": "MUTATION_REQUESTED"})
 
+    @Slot(str, str, str, result=str)
+    def confirmConversationalCreate(self, token: str, conversation_id: str,
+                                    scope: str) -> str:
+        """A UI approval authorizes one exact, previously previewed Create."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            if self._store.get_conversation(conversation_id) is None:
+                return _json({"ok": False, "error": "unknown_conversation"})
+            pending = self._create_gate.consume(token, conversation_id, scope)
+        except (ValueError, KeyError, TypeError):
+            return _json({"ok": False, "error": "approval_invalid_or_expired"})
+        worker = ConversationalCreateWorker(pending)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._mutation_worker = worker
+        self._mutation_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedMutation.connect(self._on_memory_mutation)
+        worker.finishedMutation.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_mutation_thread_finished)
+        trace("conversational_create_thread_starting")
+        thread.start()
+        return _json({"ok": True, "status": "CREATE_REQUESTED"})
+
+    @Slot(result=str)
+    def cancelConversationalCreate(self) -> str:
+        if self._mutation_thread is not None:
+            return _json({"ok": False, "error": "mutation_in_progress"})
+        self._create_gate.clear()
+        return _json({"ok": True, "status": "CANCELLED"})
+
     @Slot(result=str)
     def cancelPendingPersonalMutation(self) -> str:
         if self._mutation_thread is not None:
@@ -617,6 +661,7 @@ class JarvisBridge(QObject):
               memory=memory_scope is not None, knowledge=knowledge_dataset is not None)
         if self.active or self._closing:
             return _json({"ok": False, "error": "busy"})
+        self._create_gate.clear()
         if not model.strip() or not prompt.strip():
             return _json({"ok": False, "error": "missing_text_or_model"})
         if self._store.get_conversation(conversation_id) is None:
@@ -684,6 +729,9 @@ class JarvisBridge(QObject):
     def _on_done(self, conversation_id: str, result: str, error_code: str,
                  memory_status: str) -> None:
         trace("bridge_worker_done_received", result=result, error_class=error_code)
+        proposal = (
+            self._worker.create_proposal if self._worker is not None else None
+        )
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
@@ -692,6 +740,27 @@ class JarvisBridge(QObject):
                 self._worker.routing_status if self._worker is not None else "NOT_REQUESTED"
             ),
         }))
+        if result == "completed" and proposal is not None:
+            try:
+                token = self._create_gate.offer(
+                    content=proposal["content"],
+                    scope=proposal["scope"],
+                    conversation_id=conversation_id,
+                )
+                self.streamEvent.emit(_json({
+                    "type": "create_proposal", "ok": True,
+                    "conversationId": conversation_id,
+                    "content": proposal["content"], "scope": proposal["scope"],
+                    "authorizationToken": token,
+                }))
+            except (ValueError, KeyError, TypeError):
+                self._create_gate.clear()
+                self.streamEvent.emit(_json({
+                    "type": "create_proposal", "ok": False,
+                    "conversationId": conversation_id,
+                    "error": "invalid_or_sensitive_create_proposal",
+                }))
+
 
     @Slot()
     def _on_thread_finished(self) -> None:
@@ -707,6 +776,7 @@ class JarvisBridge(QObject):
             QTimer.singleShot(0, self._window.close)
 
     def request_shutdown(self) -> None:
+        self._create_gate.clear()
         trace("bridge_shutdown_requested", worker_active=self.active)
         self._mutation_gate.clear()
         self._closing = True
