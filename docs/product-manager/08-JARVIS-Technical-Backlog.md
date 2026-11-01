@@ -320,3 +320,26 @@ conflitos multi-documento e causa-raiz definitiva do antigo
 **Próximo passo proposto:** finalização restrita dentro de TB-02,
 sujeita à decisão do proprietário sobre os findings. Sem merge na
 `main`, sem TB-03.
+
+## 13. TB-02 Finalization — B-01a (Core/CLI) committed, pending tests
+
+Owner approved B-01 (supervised personal Cognitive Memory mutations) and
+B-02 (durable documentary provenance). Implementation order: B-01 first;
+B-02 only after validating B-01.
+
+B-01a in feature branch adds a personal-mutation service and explicit CLI
+`--memory-supersede UUID` / `--memory-forget UUID`, with confirmed
+local ownership check, matching remote provenance and HTTPS service,
+preview, exact UUID consent, recheck immediately before mutation,
+journal/idempotency, no automatic retry and unknown-outcome blocking.
+TB-02 disposable test memories remain isolated. New offline tests were
+committed but are **not yet run on the owner's Windows machine**.
+
+**Not yet B-01 Product Done:** conversational intent/desktop confirmation
+flow and human smoke on a new authorized test record. Existing personal
+memories MUST NOT be used for the initial regression test.
+
+**Not yet B-02:** source metadata persists only in the current UI turn;
+durable message-linked provenance still to be implemented.
+
+Main branch remains untouched. No TB-03.
