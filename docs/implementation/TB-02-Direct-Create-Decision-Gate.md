@@ -84,3 +84,21 @@ restarting. Do not alter original teal preference. Test no duplicates,
 timeouts and safe shutdown. Only after human acceptance can the
 increment be marked PASS and the next target (natural Update/Forget
 decision evaluation) be approached.
+
+## Test collection estimate (not an acceptance result)
+
+Previous owner-validated baseline: **245 passed**. New parametrized
+cases added so far: 4 permitted examples, 14 rejected risky/quoted/
+compound examples, 4 ambiguous scopes, 1 classification/authority
+case; plus 3 lifecycle audit/replay cases and 5 end-to-end/failure
+desktop worker cases. **Expected 276 collected cases**. This number
+is based on test-file inspection, not a run on the owner Windows
+environment. If the count or failures differ, investigate rather
+than altering safety assertions to force a green run.
+
+One important limitation: this conservative pilot does not yet perform
+semantic equivalence/contradiction checks against all existing Memory
+records. Repeated, newly authored requests with *new message IDs*
+remain distinct explicit requests; only replay of the exact same
+source message is blocked. Record/deduplication and target-resolution
+are future decision-evaluation work, not validated here.
