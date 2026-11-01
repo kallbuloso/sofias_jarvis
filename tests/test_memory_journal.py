@@ -119,6 +119,17 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
     journal = MemoryOperationJournal(path)
     journal.prepare(op_id, "https://memory.example", payload)
     with sqlite3.connect(path) as db:
+        # Reconstruct a REAL v2 schema, not just a v2 user_version.
+        # Otherwise SQLite v4 consent columns survive the downgrade fixture,
+        # and the legitimate v3->v4 migration refuses to add duplicates.
+        db.execute("DROP INDEX idx_cognitive_confirmation_ref")
+        for name in (
+            "confirmation_ref",
+            "confirmation_method",
+            "confirmation_conversation_id",
+            "confirmed_by_user_at",
+        ):
+            db.execute(f"ALTER TABLE cognitive_write_operations DROP COLUMN {name}")
         db.execute("DROP INDEX idx_tb02_mutation_pending")
         db.execute("DROP TABLE tb02_test_memories")
         db.execute("ALTER TABLE cognitive_write_operations DROP COLUMN operation_kind")
@@ -208,3 +219,41 @@ def test_authorization_receipt_cannot_be_reused(tmp_path):
     journal.resolve(first, status="rejected", error_code="TEST_REJECTED")
     with pytest.raises(sqlite3.IntegrityError):
         make_intent(str(uuid4()))
+
+
+def test_existing_v3_database_migrates_to_v4_without_faking_human_consent(tmp_path):
+    path = tmp_path / "jarvis.sqlite3"
+    journal = MemoryOperationJournal(path)
+    op_id, payload = new_intent()
+    journal.prepare(op_id, "https://memory.example", payload)
+    journal.claim(op_id)
+    memory_id = str(uuid4())
+    journal.resolve(op_id, status="confirmed", memory_id=memory_id)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP INDEX idx_cognitive_confirmation_ref")
+        for name in (
+            "confirmation_ref",
+            "confirmation_method",
+            "confirmation_conversation_id",
+            "confirmed_by_user_at",
+        ):
+            db.execute(f"ALTER TABLE cognitive_write_operations DROP COLUMN {name}")
+        db.execute("PRAGMA user_version = 3")
+    # A fully valid v3 database must migrate once to v4.
+    reopened = MemoryOperationJournal(path)
+    operation = reopened.get(op_id)
+    assert operation["status"] == "confirmed"
+    assert operation["memory_id"] == memory_id
+    assert operation["confirmation_ref"] is None
+    assert operation["confirmation_method"] is None
+    assert operation["confirmation_conversation_id"] is None
+    assert operation["confirmed_by_user_at"] is None
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        columns = {row[1] for row in db.execute(
+            "PRAGMA table_info(cognitive_write_operations)"
+        )}
+    assert {
+        "confirmation_ref", "confirmation_method",
+        "confirmation_conversation_id", "confirmed_by_user_at",
+    } <= columns
