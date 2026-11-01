@@ -53,6 +53,7 @@ class ReplyWorker(QObject):
         error_code = ""
         memory_provider = None
         knowledge_provider = None
+        runtime = None
         memory_status = "NOT_REQUESTED"
         memory_key = None
         try:
@@ -145,7 +146,28 @@ class ReplyWorker(QObject):
                     "references": (knowledge_provider.last_references
                                    if knowledge_provider is not None else []),
                     "dataset": self.knowledge_dataset,
+                    "assistantMessageId": (
+                        runtime.last_assistant_message_id if runtime is not None else None
+                    ),
+                    "evidencePersistence": "NOT_SAVED",
                 }
+                if evidence["assistantMessageId"] is not None:
+                    try:
+                        # Localized per-message metadata only, no chunk content.
+                        SQLiteConversationStore(database_path()).save_knowledge_evidence(
+                            evidence["assistantMessageId"],
+                            dataset=self.knowledge_dataset,
+                            knowledge_status=evidence["knowledgeStatus"],
+                            query_id=evidence["queryId"],
+                            references=evidence["references"],
+                        )
+                        evidence["evidencePersistence"] = "SAVED"
+                    except Exception as exc:
+                        trace("knowledge_evidence_persistence_failed",
+                              error_class=type(exc).__name__)
+                        # No unsaved references can be presented as durable.
+                        evidence["references"] = []
+                        evidence["evidencePersistence"] = "FAILED"
                 self.knowledgeDone.emit(self.conversation_id, _json(evidence))
             self.api_key = ""
             memory_key = None
@@ -581,6 +603,8 @@ class JarvisBridge(QObject):
             "queryId": data.get("queryId"),
             "references": data.get("references", []),
             "dataset": data.get("dataset"),
+            "assistantMessageId": data.get("assistantMessageId"),
+            "evidencePersistence": data.get("evidencePersistence", "NOT_SAVED"),
         }))
 
     @Slot(str, str, str, str)
