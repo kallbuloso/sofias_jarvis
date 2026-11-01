@@ -339,3 +339,37 @@ operations are also stamped `cli_typed`.
 
 **B-01d is not yet accepted** pending Windows validation and review.
 B-01 Product Done remains blocked until acceptance; B-02 is queued.
+
+## B-01d — Windows migration regression repair (owner report)
+
+Owner successfully created a consistent production SQLite backup
+before any v4 open:
+`C:\\Users\\Usuario\\AppData\\Local\\JARVIS\\jarvis-pre-v4-20261101-111733.sqlite3`.
+
+First Windows run after B-01d: **199 passed, 2 failed, 7.46s**:
+- `test_v2_to_v3_migration_preserves_pending_create_journal` had simulated
+  v2 by removing v3 columns and changing `user_version`, but left the
+  NEW v4 consent columns/index in place. The correct migration then
+  rejected `ADD COLUMN confirmation_ref` as duplicate.
+- `test_local_reopen_preserves_lineage_and_conflicts` asserted that a
+  freshly reopened current database still had `user_version=3`,
+  while the approved implementation is `4`.
+
+**Repair is test-only.** The v2 fixture now drops all four v4 consent
+columns and their unique index before constructing v2. The current
+database assertion is changed to v4. A new explicit v3→v4 migration
+regression case verifies pre-existing operation ID/status, absence of
+retroactively fabricated consent, and presence of the four new columns.
+No production migration was relaxed or made idempotent to tolerate
+an incorrectly labelled schema.
+
+Expected **202 collected/passing** after repair: the 201 existing
+cases plus one added v3→v4 test. This number is an expectation, not
+a local Windows execution result. Follow-up: rerun offline pytest,
+then frontend Vite build; only if both pass should the owner run
+`--memory-operation 6e925d24-1205-4864-9a69-79fc6616d154`,
+which opens/migrates the actual operational SQLite. The historical
+record must show `status=confirmed` and `confirmation_ref=null`.
+
+B-01 Product Done remains pending human verification; no live
+Cognitive Memory mutation is required or authorized.
