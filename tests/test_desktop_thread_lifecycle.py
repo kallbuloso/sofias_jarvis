@@ -32,9 +32,16 @@ def test_finished_signal_cleanup_runs_in_gui_thread(tmp_path, monkeypatch):
     thread.finished.connect(bridge._on_thread_finished)
     thread.start()
     deadline = time.monotonic() + 3.0
-    while bridge._thread is not None and time.monotonic() < deadline:
-        _APP.processEvents()
-        time.sleep(0.01)
+    try:
+        while bridge._thread is not None and time.monotonic() < deadline:
+            _APP.processEvents()
+            time.sleep(0.01)
+    finally:
+        # Avoid an abort in the pytest process if this regression fails.
+        if bridge._thread is not None:
+            thread.quit()
+            thread.wait(3000)
+            _APP.processEvents()
 
     assert bridge._thread is None
     assert any(name == "bridge_thread_finished" and data.get("in_gui_thread") is True
