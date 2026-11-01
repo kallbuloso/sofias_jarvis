@@ -37,6 +37,10 @@ def main() -> int:
     actions.add_argument("--knowledge-stats", action="store_true",
                          help="Inspect jarvis-knowledge dataset counters")
     actions.add_argument("--memory-create", action="store_true", help="Create an explicitly confirmed cognitive memory")
+    actions.add_argument("--memory-supersede", metavar="UUID",
+                         help="Supervised replacement of JARVIS-owned personal memory by UUID")
+    actions.add_argument("--memory-forget", metavar="UUID",
+                         help="Supervised forget of exactly one JARVIS-owned personal memory")
     actions.add_argument("--memory-test-create", action="store_true", help="Create a fixed, isolated disposable TB-02 test memory")
     actions.add_argument("--memory-test-supersede", metavar="UUID", help="Supersede ONLY a locally registered TB-02 test memory")
     actions.add_argument("--memory-test-forget", metavar="UUID", help="Forget ONLY a locally registered TB-02 test memory")
@@ -191,6 +195,57 @@ def main() -> int:
             if result.get("status") in ("failed", "cancelled", "FAILED", "CANCELLED"):
                 return 2
             return 0
+
+        if args.memory_supersede or args.memory_forget:
+            from jarvis.memory.cognitive import CognitiveMemoryClient
+            from jarvis.memory.connection import configured_memory_url
+            from jarvis.memory.journal import MemoryOperationJournal
+            from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+            from jarvis.memory.sensitive import looks_like_credential
+            from jarvis.secrets.windows import WindowsCredentialStore
+
+            target_id = args.memory_supersede or args.memory_forget
+            action = "supersede" if args.memory_supersede else "forget"
+            url = configured_memory_url()
+            if not url:
+                print(json.dumps({"status": "URL_MISSING"}))
+                return 2
+            key = WindowsCredentialStore().get_memory_key()
+            if not key:
+                print(json.dumps({"status": "CREDENTIAL_MISSING"}))
+                return 2
+            client = CognitiveMemoryClient(url, key)
+            if client.diagnose()["status"] != "COMPATIBLE":
+                print(json.dumps({"status": "CONTRACT_INCOMPATIBLE"}))
+                return 2
+            lifecycle = PersonalMemoryLifecycle(
+                client, MemoryOperationJournal(database_path()), url,
+            )
+            preview = lifecycle.preview(target_id, action=action)
+            print(json.dumps({
+                "target": preview["memory_id"], "scope": preview["scope"],
+                "memory_type": preview["memory_type"], "lifecycle": preview["lifecycle"],
+                "content": preview["content"],
+            }, ensure_ascii=False, indent=2))
+            new_content = None
+            if action == "supersede":
+                new_content = input("Novo conteúdo (substitui a memória): ").strip()
+                if not 1 <= len(new_content) <= 16384 or looks_like_credential(new_content):
+                    print(json.dumps({"status": "INVALID_OR_SENSITIVE_CONTENT"}))
+                    return 2
+                print(json.dumps({"replacement": new_content}, ensure_ascii=False))
+                authorization = f"SUBSTITUIR {preview['memory_id']}"
+            else:
+                print("Esquecimento permanente deste UUID. Outras memórias da linhagem não são afetadas.")
+                authorization = f"ESQUECER {preview['memory_id']}"
+            if input(f"Digite exatamente {authorization} para autorizar: ").strip() != authorization:
+                print(json.dumps({"status": "CANCELLED"}))
+                return 0
+            # The service verifies the remote preview a second time before any mutation.
+            result = (lifecycle.supersede(preview, new_content=new_content)
+                      if action == "supersede" else lifecycle.forget(preview))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["status"] == "CONFIRMED" else 2
 
         if args.memory_test_list:
             from jarvis.memory.journal import MemoryOperationJournal
