@@ -258,3 +258,24 @@ def test_create_gate_rejects_different_scope_and_unknown_conversation(monkeypatc
         token, first, "global",
     ))["error"] == "approval_invalid_or_expired"
     assert not bridge.active
+
+
+def test_create_preview_waits_for_reply_thread_cleanup(monkeypatch, tmp_path):
+    from PySide6.QtCore import QThread
+    prepare(monkeypatch, tmp_path)
+    bridge = JarvisBridge()
+    conv = json.loads(bridge.createConversation())["id"]
+    events = []
+    bridge.streamEvent.connect(lambda raw: events.append(json.loads(raw)))
+    bridge._thread = QThread()
+    bridge._on_conversational_create_proposed(
+        conv, json.dumps({"content": "Preferência de teste", "scope": "global"}),
+    )
+    assert events == []
+    assert bridge._deferred_create_proposal is not None
+    bridge._on_thread_finished()
+    assert not bridge.active
+    assert len(events) == 1
+    assert events[0]["type"] == "create_proposal"
+    assert events[0]["authorizationToken"]
+    assert json.loads(bridge.cancelConversationalCreate())["ok"] is True
