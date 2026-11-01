@@ -185,3 +185,21 @@ authorized, disposable personal test memory; use the same owner
 checks, real operation IDs and independent remote verification.
 
 **TB-02/B-01c is NOT accepted yet. B-02 remains pending.**
+
+## B-01c — Windows automated validation (2026-11-01)
+
+The owner executed the post-confirmation suite:
+- `python -m pytest -q`: **194 passed in 7.86s**.
+- `npm run build`: **PASS**, Vite 7.3.7, 559 transformed modules,
+  completed in 5.53s. The >500 kB bundle warning was non-fatal.
+
+**Result:** offline automated checks and production frontend compilation PASS.
+**Not yet accepted:** Qt desktop cancel-only smoke and later authorized
+mutation using a *new disposable personal record*. Avoid destructive use
+of the preserved global teal preference UUID.
+
+The next human test opens the existing teal record using the explicit
+`/atualizar UUID | Prefiro a cor azul.` and `/esquecer UUID` commands
+but clicks only `Fechar sem alterar` each time. A subsequent
+`--memory-get` must still report `lifecycle=active` and unchanged teal
+content. **Do not type the confirmation phrase or click the confirm button.**
