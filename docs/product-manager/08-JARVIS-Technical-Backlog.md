@@ -270,3 +270,31 @@ aceite visual/funcional do desktop pendente. Ver
 `docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
 
 TB-02 **IN PROGRESS**; `main` e TB-03 permanecem intocados.
+
+
+## 11. TB-02 — Desktop Smoke com Qt e Knowledge: PASS (2026-10-31)
+
+Foi confirmado pelo proprietário após correção de afinidade do
+`QThread.finished`:
+
+- `172 passed in 4.90s` no Windows;
+- três turnos reais no mesmo processo: sem Memory/Knowledge, somente
+  Knowledge, e Cognitive Memory + Knowledge;
+- os três `ReplyWorker` terminaram com `result=completed`;
+- todos os `bridge_thread_finished` chegaram na thread da GUI,
+  `in_gui_thread=true`;
+- `window_close_accepted`, `qt_about_to_quit` e
+  `qt_event_loop_exit=0`, sem aborto observado nesta sessão;
+- o proprietário confirmou funcionamento simultâneo do Cognitive Memory
+  e Knowledge; a evidência anterior incluiu fontes verificadas do ADR.
+
+**Aceite de smoke desktop/lifecycle:** PASS. O incidente anterior
+`Fatal Python error: Aborted` / `QDxgiVSyncService not destroyed in time`
+permanece documentado, sem inferir causa-raiz definitiva com base em
+um único ensaio pós-correção. Instrumentação segura permanece disponível
+por opt-in para diagnóstico de regressão.
+
+**Estado TB-02:** revisão consolidada dos critérios de Product Done
+pendente. Smoke aprovado não equivale automaticamente a merge nem
+a autorização do TB-03. Fonte:
+`docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
