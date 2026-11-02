@@ -198,16 +198,28 @@ def test_litellm_normalizes_provider_error_without_raw_exception_text():
     assert "MUST-NOT-APPEAR" not in captured.value.detail
 
 
-def test_factory_defaults_to_native_and_litellm_is_explicit(monkeypatch):
+def test_factory_defaults_to_litellm_after_owner_validated_parity(monkeypatch):
     monkeypatch.delenv("JARVIS_INFERENCE_BACKEND", raising=False)
-    assert configured_inference_backend() == "native"
+    assert configured_inference_backend() == "litellm"
 
-    provider = build_inference_provider(
-        "anthropic", "PRIVATE", backend="litellm",
-    )
+    provider = build_inference_provider("anthropic", "PRIVATE")
     assert isinstance(provider, LiteLLMInferenceAdapter)
     assert provider.provider_id == "anthropic"
     assert provider.litellm_prefix == "anthropic"
+
+
+def test_native_backend_remains_explicit_rollback(monkeypatch):
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = object()
+
+    monkeypatch.setitem(
+        sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI),
+    )
+    provider = build_inference_provider("openai", "PRIVATE")
+    assert provider.__class__.__name__ == "OpenAIResponsesAdapter"
 
 
 def test_factory_reads_litellm_backend_from_environment(monkeypatch):
