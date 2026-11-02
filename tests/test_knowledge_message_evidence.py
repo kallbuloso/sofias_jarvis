@@ -146,6 +146,7 @@ def test_existing_v4_database_migrates_without_changing_history(tmp_path):
     db.append_assistant_delta(mid, "Texto antes da migração")
     db.end_assistant_message(mid, successful=True)
     with sqlite3.connect(path) as raw:
+        raw.execute("DROP TABLE integration_connections")
         raw.execute("DROP TABLE message_knowledge_evidence")
         raw.execute("PRAGMA user_version = 4")
     reopened = SQLiteConversationStore(path)
