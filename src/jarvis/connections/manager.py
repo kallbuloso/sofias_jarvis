@@ -38,6 +38,81 @@ class ConnectionManager:
     def _configured(self, connection_id: str) -> bool:
         return bool(self.vault.get_connection_secret(connection_id))
 
+    def ensure_default_openai_connection(self) -> dict | None:
+        """Migrate the legacy OpenAI credential into a normal AI Connection.
+
+        The legacy credential entry is preserved for compatibility during TB-04.
+        """
+        existing = self.store.list_by_provider("openai")
+        if existing:
+            enabled = [item for item in existing if item["enabled"]]
+            chosen = enabled[0] if enabled else existing[0]
+            return self._public(
+                chosen, configured=self._configured(chosen["id"]),
+            )
+
+        legacy = self.vault.get_openai_key()
+        if not legacy:
+            return None
+
+        item = self.store.create(
+            "openai",
+            configuration={
+                "label": "OpenAI principal",
+                "migration_source": "legacy_openai_credential",
+            },
+        )
+        connection_id = item["id"]
+        try:
+            self.vault.set_connection_secret(connection_id, legacy)
+            self.store.set_enabled(connection_id, True)
+        except Exception:
+            try:
+                self.vault.delete_connection_secret(connection_id)
+            finally:
+                self.store.delete(connection_id)
+            raise
+
+        migrated = self.store.get(connection_id)
+        return self._public(migrated, configured=True)
+
+    def resolve_ai_connection(
+        self, *, provider_id: str = "openai",
+        connection_id: str | None = None,
+    ) -> tuple[dict, str]:
+        descriptor = self.registry.get(provider_id)
+        if descriptor is None or descriptor.provider_type != "ai_inference":
+            raise ValueError("AI_PROVIDER_UNKNOWN")
+
+        if provider_id == "openai" and not self.store.list_by_provider("openai"):
+            self.ensure_default_openai_connection()
+
+        if connection_id is not None:
+            item = self.store.get(connection_id)
+            candidates = [item] if item is not None else []
+        else:
+            candidates = [
+                item for item in self.store.list_by_provider(provider_id)
+                if item["enabled"]
+            ]
+
+        candidates = [
+            item for item in candidates
+            if item is not None
+            and item["provider_id"] == provider_id
+            and item["enabled"]
+        ]
+        if not candidates:
+            raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+        if len(candidates) > 1 and connection_id is None:
+            raise ValueError("AI_CONNECTION_AMBIGUOUS")
+
+        item = candidates[0]
+        secret = self.vault.get_connection_secret(item["id"])
+        if not secret:
+            raise ValueError("AI_CREDENTIAL_NOT_CONFIGURED")
+        return self._public(item, configured=True), secret
+
     def list_connections(self) -> list[dict]:
         result = []
         for item in self.store.list():
@@ -114,7 +189,12 @@ class ConnectionManager:
         if enabled:
             if not self._configured(connection_id):
                 raise ValueError("AUTHENTICATION_REQUIRED")
-            if item["external_account_ref"] is None:
+            descriptor = self.registry.get(item["provider_id"])
+            if descriptor is None:
+                raise ValueError("unknown_provider")
+            if (descriptor.provider_type == "external_integration"
+                    and descriptor.status_check_support
+                    and item["external_account_ref"] is None):
                 raise ValueError("CONNECTION_NOT_VERIFIED")
         updated = self.store.set_enabled(connection_id, bool(enabled))
         return self._public(updated, configured=self._configured(connection_id))
