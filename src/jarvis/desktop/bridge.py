@@ -1268,7 +1268,13 @@ class JarvisBridge(QObject):
             self._voice_capture.cancel()
             return _json({"ok": False, "error": "missing_model"})
         try:
+            trace("voice_capture_stop_begin")
             turn = self._voice_capture.stop()
+            trace(
+                "voice_capture_stop_end",
+                duration_ms=turn.duration_ms,
+                audio_bytes=len(turn.wav_bytes),
+            )
             key = WindowsCredentialStore().get_openai_key()
             if not key:
                 raise ValueError("credential_not_configured")
@@ -1304,10 +1310,24 @@ class JarvisBridge(QObject):
             "state": "TRANSCRIBING",
             "conversationId": turn.conversation_id,
         }))
-        trace("voice_transcription_thread_starting")
-        thread.start()
+        trace("voice_transcription_thread_scheduled")
+        # Let Qt finish QAudioSource/QBuffer deferred destruction before
+        # starting network/STT work. This avoids overlapping multimedia teardown
+        # with a new worker-thread start in the same GUI event-loop turn.
+        QTimer.singleShot(0, self._start_voice_transcription_thread)
         return _json({"ok": True, "state": "TRANSCRIBING",
                       "conversationId": turn.conversation_id})
+
+    @Slot()
+    def _start_voice_transcription_thread(self) -> None:
+        thread = self._voice_thread
+        if thread is None:
+            return
+        trace(
+            "voice_transcription_thread_starting",
+            closing=self._closing,
+        )
+        thread.start()
 
     @Slot(str)
     def _on_voice_transcription(self, raw_result: str) -> None:
