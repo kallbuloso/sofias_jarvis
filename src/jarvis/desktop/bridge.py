@@ -992,13 +992,36 @@ class JarvisBridge(QObject):
         if selected_connection is not None and selected_model:
             try:
                 from jarvis.inference.profiles import InferenceProfileStore
-                InferenceProfileStore(database_path()).ensure_general(
+                profiles = InferenceProfileStore(database_path())
+                profiles.ensure_general(
                     connection_id=selected_connection["id"],
                     model=selected_model,
                 )
+                general = profiles.get_by_slug("general")
+                primary = (
+                    general.get("configuration", {}).get("primary", {})
+                    if general is not None else {}
+                )
+                canonical_connection_id = primary.get("connection_id")
+                canonical_model = primary.get("model")
+                canonical_connection = next(
+                    (
+                        item for item in connections
+                        if item["id"] == canonical_connection_id
+                        and item.get("provider_type") == "ai_inference"
+                    ),
+                    None,
+                )
+                if (canonical_connection is not None
+                        and isinstance(canonical_model, str)
+                        and canonical_model):
+                    selected_connection = canonical_connection
+                    selected_model = canonical_model
+                    self._active_ai_provider = canonical_connection["provider_id"]
+                    self._active_ai_connection_id = canonical_connection["id"]
             except Exception as exc:
-                # Profile migration must never make the already-valid desktop
-                # selection unusable during TB-04D1/D2.
+                # Migration/read failure must not destroy the already-valid
+                # legacy desktop selection during the transition.
                 trace(
                     "inference_general_profile_bootstrap_failed",
                     error_class=type(exc).__name__,
@@ -1117,7 +1140,6 @@ class JarvisBridge(QObject):
                 connection_id=connection_id,
                 model_id=model.strip(),
             )
-            save_ai_selection(provider_id, connection_id, model.strip())
             from jarvis.inference.profiles import InferenceProfileStore
             profiles = InferenceProfileStore(database_path())
             general = profiles.get_by_slug("general")
@@ -1132,8 +1154,6 @@ class JarvisBridge(QObject):
                     connection_id=connection_id,
                     model=model.strip(),
                 )
-            if provider_id == "openai":
-                save_preferred_model(model.strip())
         except Exception as exc:
             return _json({
                 "ok": False,
@@ -1141,6 +1161,15 @@ class JarvisBridge(QObject):
             })
         self._active_ai_provider = item["provider_id"]
         self._active_ai_connection_id = item["id"]
+        try:
+            save_ai_selection(provider_id, connection_id, model.strip())
+            if provider_id == "openai":
+                save_preferred_model(model.strip())
+        except (OSError, ValueError) as exc:
+            trace(
+                "desktop_ai_preference_write_failed",
+                error_class=type(exc).__name__,
+            )
         return _json({
             "ok": True,
             "providerId": item["provider_id"],
