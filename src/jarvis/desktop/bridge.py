@@ -1271,6 +1271,162 @@ class JarvisBridge(QObject):
                 "error": getattr(exc, "code", type(exc).__name__),
             })
 
+    def _public_inference_profile(self, profile: dict) -> dict:
+        primary = profile.get("configuration", {}).get("primary", {})
+        connection = None
+        try:
+            connection = self._connection_manager().store.get(
+                primary.get("connection_id")
+            )
+        except Exception:
+            connection = None
+        return {
+            "id": profile["id"],
+            "slug": profile["slug"],
+            "name": profile["name"],
+            "enabled": profile["enabled"],
+            "connectionId": primary.get("connection_id"),
+            "providerId": connection.get("provider_id") if connection else None,
+            "model": primary.get("model"),
+            "requirements": profile.get("configuration", {}).get(
+                "requirements", {}
+            ),
+            "constraints": profile.get("configuration", {}).get(
+                "constraints", {}
+            ),
+        }
+
+    @Slot(result=str)
+    def listInferenceProfiles(self) -> str:
+        try:
+            from jarvis.inference.profiles import InferenceProfileStore
+            profiles = InferenceProfileStore(database_path())
+            return _json({
+                "ok": True,
+                "items": [
+                    self._public_inference_profile(item)
+                    for item in profiles.list_profiles()
+                ],
+            })
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", type(exc).__name__),
+            })
+
+    @Slot(str, result=str)
+    def getConversationInference(self, conversation_id: str) -> str:
+        try:
+            conversation_id = str(UUID(conversation_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_conversation"})
+        if self._store.get_conversation(conversation_id) is None:
+            return _json({"ok": False, "error": "unknown_conversation"})
+        try:
+            from jarvis.inference.profiles import InferenceProfileStore
+            from jarvis.inference.resolver import (
+                InferenceResolutionContext,
+                InferenceResolver,
+            )
+            profiles = InferenceProfileStore(database_path())
+            binding = profiles.get_binding(
+                scope_type="conversation",
+                scope_id=conversation_id,
+            )
+            plan = InferenceResolver.from_database(database_path()).resolve(
+                InferenceResolutionContext(conversation_id=conversation_id)
+            )
+            return _json({
+                "ok": True,
+                "bindingProfileId": (
+                    binding["profile_id"]
+                    if binding is not None and binding["enabled"] else None
+                ),
+                "resolved": plan.as_dict(),
+            })
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
+    @Slot(str, str, result=str)
+    def setConversationInferenceProfile(
+        self, conversation_id: str, profile_id: str,
+    ) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            conversation_id = str(UUID(conversation_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_conversation"})
+        if self._store.get_conversation(conversation_id) is None:
+            return _json({"ok": False, "error": "unknown_conversation"})
+        try:
+            from jarvis.inference.profiles import InferenceProfileStore
+            profiles = InferenceProfileStore(database_path())
+            if not profile_id:
+                profiles.unbind(
+                    scope_type="conversation",
+                    scope_id=conversation_id,
+                )
+            else:
+                profile_id = str(UUID(profile_id))
+                profile = profiles.get_profile(profile_id)
+                if profile is None or not profile["enabled"]:
+                    raise ValueError("INFERENCE_PROFILE_NOT_AVAILABLE")
+                profiles.bind(
+                    profile_id,
+                    scope_type="conversation",
+                    scope_id=conversation_id,
+                )
+            return self.getConversationInference(conversation_id)
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
+    @Slot(str, str, str, str, result=str)
+    def createInferenceProfile(
+        self, name: str, slug: str, connection_id: str, model: str,
+    ) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        if not isinstance(name, str) or not name.strip():
+            return _json({"ok": False, "error": "invalid_profile_name"})
+        try:
+            connection_id = str(UUID(connection_id))
+            connection = self._connection_manager().store.get(connection_id)
+            if connection is None:
+                raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+            self._connection_manager().resolve_ai_connection(
+                provider_id=connection["provider_id"],
+                connection_id=connection_id,
+                model_id=model.strip(),
+            )
+            from jarvis.inference.profiles import InferenceProfileStore
+            profile = InferenceProfileStore(database_path()).create_profile(
+                slug.strip(),
+                name.strip(),
+                connection_id=connection_id,
+                model=model.strip(),
+                requirements={
+                    "streaming": True,
+                    "structured_output": True,
+                },
+                constraints={"locality": "cloud_allowed"},
+            )
+            return _json({
+                "ok": True,
+                "profile": self._public_inference_profile(profile),
+            })
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
     @Slot(result=str)
     def createConversation(self) -> str:
         return _json({"ok": True, "id": self._store.create_conversation()})
