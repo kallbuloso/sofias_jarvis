@@ -20,7 +20,6 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
-from jarvis.adapters.openai_responses import OpenAIResponsesAdapter
 from jarvis.config import database_path
 from jarvis.desktop.diagnostics import trace
 from jarvis.desktop.model_preferences import bootstrap_model, save_preferred_model
@@ -40,8 +39,11 @@ class ReplyWorker(QObject):
     createProposed = Signal(str, str)
     mutationProposed = Signal(str, str)
 
-    def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
-                 memory_scope: str | None = None,
+    def __init__(
+        self, conversation_id: str, prompt: str, model: str, credential: str, *,
+        provider_id: str = "openai",
+        connection_id: str | None = None,
+        memory_scope: str | None = None,
                  knowledge_dataset: str | None = None,
                  conversational: bool = False,
                  confirmed_forget=None,
@@ -50,7 +52,9 @@ class ReplyWorker(QObject):
         self.conversation_id = conversation_id
         self.prompt = prompt
         self.model = model
-        self.api_key = api_key
+        self.credential = credential
+        self.provider_id = provider_id
+        self.connection_id = connection_id
         self.memory_scope = memory_scope
         self.knowledge_dataset = knowledge_dataset
         self.conversational = conversational
@@ -75,9 +79,10 @@ class ReplyWorker(QObject):
         memory_status = "NOT_REQUESTED"
         memory_key = None
         try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=self.api_key, timeout=30.0)
+            from jarvis.inference.factory import build_inference_provider
+            inference_provider = build_inference_provider(
+                self.provider_id, self.credential,
+            )
             from jarvis.conversation.grounding import GroundedTextProvider
             from jarvis.conversation.intent import TextIntentRouter
             from jarvis.conversation.create_decision import evaluate_direct_create
@@ -85,7 +90,7 @@ class ReplyWorker(QObject):
             if (self.confirmed_forget is None and self.control_answer is None
                     and self.conversational):
                 try:
-                    intent = TextIntentRouter(client).classify(
+                    intent = TextIntentRouter(inference_provider).classify(
                         model=self.model, utterance=self.prompt,
                     )
                     self.routing_status = "CLASSIFIED"
@@ -454,7 +459,7 @@ class ReplyWorker(QObject):
                         yield prepared_answer
                 provider = StaticAnswer()
             else:
-                provider = GroundedTextProvider(OpenAIResponsesAdapter(client))
+                provider = GroundedTextProvider(inference_provider)
 
             if self.memory_scope is not None:
                 from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError
@@ -561,7 +566,7 @@ class ReplyWorker(QObject):
                         evidence["references"] = []
                         evidence["evidencePersistence"] = "FAILED"
                 self.knowledgeDone.emit(self.conversation_id, _json(evidence))
-            self.api_key = ""
+            self.credential = ""
             memory_key = None
             knowledge_key = None
             trace("reply_worker_end", result=result, error_class=error_code,
@@ -894,10 +899,14 @@ class JarvisBridge(QObject):
 
     @Slot(result=str)
     def bootstrap(self) -> str:
+        ai_connection = None
         try:
-            has_key = bool(WindowsCredentialStore().get_openai_key())
-        except Exception:
-            has_key = False
+            ai_connection = (
+                self._connection_manager().ensure_default_openai_connection()
+            )
+        except Exception as exc:
+            trace("openai_connection_bootstrap_failed",
+                  error_class=type(exc).__name__)
         from jarvis.memory.connection import configured_memory_url
 
         try:
@@ -911,7 +920,14 @@ class JarvisBridge(QObject):
             "memoryConfigured": memory_configured,
             "conversations": self._store.list_conversations(),
             "model": bootstrap_model(),
-            "credentialConfigured": has_key,
+            "credentialConfigured": bool(
+                ai_connection and ai_connection.get("configured")
+                and ai_connection.get("enabled")
+            ),
+            "aiProvider": "openai" if ai_connection else None,
+            "aiConnectionId": (
+                ai_connection.get("id") if ai_connection else None
+            ),
         })
 
     def _connection_manager(self):
@@ -1581,14 +1597,24 @@ class JarvisBridge(QObject):
         if self._store.get_conversation(conversation_id) is None:
             return _json({"ok": False, "error": "unknown_conversation"})
         try:
-            key = WindowsCredentialStore().get_openai_key()
-        except Exception:
-            return _json({"ok": False, "error": "secure_vault_unavailable"})
-        if not key:
-            return _json({"ok": False, "error": "credential_not_configured"})
+            ai_connection, credential = (
+                self._connection_manager().resolve_ai_connection(
+                    provider_id="openai",
+                )
+            )
+        except Exception as exc:
+            code = str(exc) or type(exc).__name__
+            if code in {"AI_CREDENTIAL_NOT_CONFIGURED",
+                        "AI_CONNECTION_NOT_AVAILABLE"}:
+                code = "credential_not_configured"
+            elif code == "SecureStorageUnavailable":
+                code = "secure_vault_unavailable"
+            return _json({"ok": False, "error": code})
 
         worker = ReplyWorker(
-            conversation_id, prompt.strip(), model.strip(), key,
+            conversation_id, prompt.strip(), model.strip(), credential,
+            provider_id=ai_connection["provider_id"],
+            connection_id=ai_connection["id"],
             memory_scope=memory_scope,
             knowledge_dataset=knowledge_dataset,
             conversational=conversational,
