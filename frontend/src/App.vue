@@ -504,6 +504,7 @@ async function openIntegrations() {
   if (integrationBusy.value) return
   integrationsDialog.value = true
   warning.value = ''
+  integrationNotice.value = ''
   try {
     await refreshIntegrations()
   } catch {
