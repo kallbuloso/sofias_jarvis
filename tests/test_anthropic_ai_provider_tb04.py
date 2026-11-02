@@ -75,7 +75,7 @@ def test_anthropic_adapter_translates_developer_messages_to_system():
     assert call["max_tokens"] == 8192
 
 
-def test_anthropic_structured_output_uses_raw_json_schema():
+def test_anthropic_structured_output_uses_provider_compatible_json_schema():
     messages = FakeMessages()
     adapter = AnthropicMessagesAdapter(SimpleNamespace(messages=messages))
     result = adapter.generate_json(
@@ -97,6 +97,50 @@ def test_anthropic_structured_output_uses_raw_json_schema():
     assert call["system"] == "Classifique"
     assert call["output_config"]["format"]["type"] == "json_schema"
     assert call["output_config"]["format"]["schema"]["additionalProperties"] is False
+
+
+def test_anthropic_normalizes_nullable_enum_without_mutating_core_schema():
+    messages = FakeMessages()
+    adapter = AnthropicMessagesAdapter(SimpleNamespace(messages=messages))
+    schema = {
+        "type": "object",
+        "properties": {
+            "scope": {
+                "type": ["string", "null"],
+                "enum": [None, "global", "project:jarvis"],
+            },
+            "content": {"type": ["string", "null"]},
+        },
+        "required": ["scope", "content"],
+        "additionalProperties": False,
+    }
+
+    adapter.generate_json(
+        model="claude-sonnet-5-5",
+        messages=[{"role": "user", "content": "Oi"}],
+        schema_name="jarvis_intent",
+        schema=schema,
+    )
+
+    sent = messages.create_calls[0]["output_config"]["format"]["schema"]
+    assert sent["properties"]["scope"] == {
+        "anyOf": [
+            {
+                "type": "string",
+                "enum": ["global", "project:jarvis"],
+            },
+            {"type": "null"},
+        ]
+    }
+    assert sent["properties"]["content"] == {
+        "type": ["string", "null"],
+    }
+
+    # Provider adaptation must never rewrite the Core schema in place.
+    assert schema["properties"]["scope"] == {
+        "type": ["string", "null"],
+        "enum": [None, "global", "project:jarvis"],
+    }
 
 
 def test_anthropic_nonfinal_stop_reason_is_not_success():
