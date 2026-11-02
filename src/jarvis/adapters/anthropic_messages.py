@@ -72,6 +72,52 @@ def _api_error_code(exc: Exception) -> str:
     return "PROVIDER_REQUEST_FAILED"
 
 
+def _anthropic_schema(value):
+    """Normalize provider-specific JSON Schema quirks without changing Core schema."""
+    if isinstance(value, list):
+        return [_anthropic_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    node = {
+        key: _anthropic_schema(item)
+        for key, item in value.items()
+        if key not in {"type", "enum"}
+    }
+    declared_type = value.get("type")
+    enum = value.get("enum")
+
+    if (isinstance(declared_type, list)
+            and "null" in declared_type
+            and isinstance(enum, list)
+            and None in enum):
+        non_null_types = [item for item in declared_type if item != "null"]
+        non_null_enum = [item for item in enum if item is not None]
+        if not non_null_types:
+            return {**node, "type": "null"}
+
+        typed_branch = {
+            "type": (
+                non_null_types[0]
+                if len(non_null_types) == 1
+                else non_null_types
+            )
+        }
+        if non_null_enum:
+            typed_branch["enum"] = non_null_enum
+        node["anyOf"] = [
+            typed_branch,
+            {"type": "null"},
+        ]
+        return node
+
+    if "type" in value:
+        node["type"] = _anthropic_schema(declared_type)
+    if "enum" in value:
+        node["enum"] = _anthropic_schema(enum)
+    return node
+
+
 def _normalize_messages(messages: list[dict]) -> tuple[str | None, list[dict]]:
     if not isinstance(messages, list) or not messages:
         raise ValueError("At least one message is required")
@@ -154,7 +200,7 @@ class AnthropicMessagesAdapter:
             "output_config": {
                 "format": {
                     "type": "json_schema",
-                    "schema": schema,
+                    "schema": _anthropic_schema(schema),
                 }
             },
         }
