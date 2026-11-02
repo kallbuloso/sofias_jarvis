@@ -976,6 +976,21 @@ class JarvisBridge(QObject):
             )
             selected_model = bootstrap_model()
 
+        if selected_connection is not None and selected_model:
+            try:
+                from jarvis.inference.profiles import InferenceProfileStore
+                InferenceProfileStore(database_path()).ensure_general(
+                    connection_id=selected_connection["id"],
+                    model=selected_model,
+                )
+            except Exception as exc:
+                # Profile migration must never make the already-valid desktop
+                # selection unusable during TB-04D1/D2.
+                trace(
+                    "inference_general_profile_bootstrap_failed",
+                    error_class=type(exc).__name__,
+                )
+
         from jarvis.memory.connection import configured_memory_url
         try:
             memory_configured = bool(
