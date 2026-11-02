@@ -44,7 +44,10 @@ class ConnectionStore:
         )
         return item
 
-    def create(self, provider_id: str, *, configuration: dict | None = None) -> dict:
+    def create(
+        self, provider_id: str, *, configuration: dict | None = None,
+        credential_ref: str | None = None,
+    ) -> dict:
         if not isinstance(provider_id, str) or not provider_id.strip():
             raise ValueError("invalid_provider_id")
         if configuration is None:
@@ -53,7 +56,13 @@ class ConnectionStore:
             raise ValueError("invalid_configuration")
         connection_id = str(uuid4())
         now = _now()
-        credential_ref = f"wincred:{connection_id}"
+        if credential_ref is None:
+            credential_ref = f"wincred:{connection_id}"
+        if (not isinstance(credential_ref, str)
+                or not credential_ref.strip()
+                or len(credential_ref) > 256):
+            raise ValueError("invalid_credential_ref")
+        credential_ref = credential_ref.strip()
         with self._connection() as db:
             db.execute(
                 """INSERT INTO integration_connections(
