@@ -799,6 +799,49 @@ class VoiceTranscriptionWorker(QObject):
         self.finishedTranscription.emit(_json(payload))
 
 
+class IntegrationConnectionWorker(QObject):
+    """Run connection inspection/configuration away from the GUI thread."""
+
+    finishedConnection = Signal(str)
+
+    def __init__(self, action: str, payload: dict):
+        super().__init__()
+        self.action = action
+        self.payload = payload
+
+    @Slot()
+    def run(self) -> None:
+        trace("integration_connection_worker_begin", action=self.action)
+        try:
+            from jarvis.connections.manager import ConnectionManager
+            from jarvis.connections.store import ConnectionStore
+
+            manager = ConnectionManager(
+                ConnectionStore(database_path()), WindowsCredentialStore(),
+            )
+            if self.action == "create_github":
+                item = manager.create_github(
+                    self.payload["token"], label=self.payload.get("label", ""),
+                )
+            elif self.action == "inspect":
+                item = manager.inspect(self.payload["connection_id"])
+            else:
+                raise ValueError("unsupported_connection_worker_action")
+            result = {"ok": True, "action": self.action, "connection": item}
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "action": self.action,
+                "error": getattr(exc, "code", type(exc).__name__),
+            }
+        finally:
+            if "token" in self.payload:
+                self.payload["token"] = ""
+        trace("integration_connection_worker_end",
+              action=self.action, ok=bool(result["ok"]))
+        self.finishedConnection.emit(_json(result))
+
+
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
 
@@ -830,6 +873,9 @@ class JarvisBridge(QObject):
         from jarvis.voice.tts import LocalSpeechOutput
         self._speech = LocalSpeechOutput(self)
         self._speech.stateChanged.connect(self._on_speech_state)
+        self._connection_thread: QThread | None = None
+        self._connection_worker: IntegrationConnectionWorker | None = None
+        self._connection_result: dict | None = None
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -843,6 +889,7 @@ class JarvisBridge(QObject):
             or self._voice_thread is not None
             or self._voice_capture.active
             or self._speech.speaking
+            or self._connection_thread is not None
         )
 
     @Slot(result=str)
@@ -866,6 +913,131 @@ class JarvisBridge(QObject):
             "model": bootstrap_model(),
             "credentialConfigured": has_key,
         })
+
+    def _connection_manager(self):
+        from jarvis.connections.manager import ConnectionManager
+        from jarvis.connections.store import ConnectionStore
+
+        return ConnectionManager(
+            ConnectionStore(database_path()), WindowsCredentialStore(),
+        )
+
+    @Slot(result=str)
+    def listIntegrationProviders(self) -> str:
+        try:
+            return _json({
+                "ok": True,
+                "items": self._connection_manager().providers(),
+            })
+        except Exception as exc:
+            return _json({"ok": False, "error": type(exc).__name__})
+
+    @Slot(result=str)
+    def listIntegrationConnections(self) -> str:
+        try:
+            return _json({
+                "ok": True,
+                "items": self._connection_manager().list_connections(),
+            })
+        except Exception as exc:
+            return _json({"ok": False, "error": type(exc).__name__})
+
+    def _start_connection_worker(self, action: str, payload: dict) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        worker = IntegrationConnectionWorker(action, payload)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._connection_worker = worker
+        self._connection_thread = thread
+        self._connection_result = None
+        thread.started.connect(worker.run)
+        worker.finishedConnection.connect(self._on_connection_result)
+        worker.finishedConnection.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_connection_thread_finished)
+        thread.start()
+        return _json({"ok": True, "pending": True, "action": action})
+
+    @Slot(str, str, result=str)
+    def configureGitHubConnection(self, label: str, token: str) -> str:
+        if not isinstance(token, str) or not token.strip():
+            return _json({"ok": False, "error": "missing_token"})
+        if not isinstance(label, str) or len(label) > 120:
+            return _json({"ok": False, "error": "invalid_label"})
+        return self._start_connection_worker(
+            "create_github", {"label": label.strip(), "token": token.strip()},
+        )
+
+    @Slot(str, result=str)
+    def checkIntegrationConnection(self, connection_id: str) -> str:
+        try:
+            connection_id = str(UUID(connection_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_connection"})
+        return self._start_connection_worker(
+            "inspect", {"connection_id": connection_id},
+        )
+
+    @Slot(str)
+    def _on_connection_result(self, raw: str) -> None:
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError):
+            payload = {"ok": False, "error": "invalid_connection_result"}
+        self._connection_result = payload
+
+    @Slot()
+    def _on_connection_thread_finished(self) -> None:
+        thread = self._connection_thread
+        if thread is None:
+            return
+        self._connection_thread = None
+        self._connection_worker = None
+        thread.deleteLater()
+        payload = self._connection_result or {
+            "ok": False, "error": "connection_result_missing",
+        }
+        self._connection_result = None
+        self.streamEvent.emit(_json({
+            "type": "integration_connection",
+            **payload,
+        }))
+        if self._closing and self._window is not None and not self.active:
+            QTimer.singleShot(0, self._window.close)
+
+    @Slot(str, bool, result=str)
+    def setIntegrationConnectionEnabled(
+        self, connection_id: str, enabled: bool,
+    ) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            item = self._connection_manager().set_enabled(
+                str(UUID(connection_id)), bool(enabled),
+            )
+            return _json({"ok": True, "connection": item})
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
+    @Slot(str, result=str)
+    def removeIntegrationConnection(self, connection_id: str) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            removed = self._connection_manager().remove(str(UUID(connection_id)))
+            return _json({
+                "ok": bool(removed),
+                "error": None if removed else "unknown_connection",
+            })
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", type(exc).__name__),
+            })
 
     @Slot(result=str)
     def createConversation(self) -> str:
