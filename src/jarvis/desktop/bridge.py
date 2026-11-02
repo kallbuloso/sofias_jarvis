@@ -1027,6 +1027,14 @@ class JarvisBridge(QObject):
                     error_class=type(exc).__name__,
                 )
 
+        model_preferences = (
+            dict(selection.get("models", {})) if selection else {}
+        )
+        if selected_connection is not None and selected_model:
+            model_preferences[
+                selected_connection["provider_id"]
+            ] = selected_model
+
         from jarvis.memory.connection import configured_memory_url
         try:
             memory_configured = bool(
@@ -1050,11 +1058,7 @@ class JarvisBridge(QObject):
                 item for item in connections
                 if item.get("provider_type") == "ai_inference"
             ],
-            "aiModelPreferences": (
-                selection.get("models", {}) if selection else {
-                    "openai": selected_model
-                } if selected_model else {}
-            ),
+            "aiModelPreferences": model_preferences,
         })
 
     def _connection_manager(self):
