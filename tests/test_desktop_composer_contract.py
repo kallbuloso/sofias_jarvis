@@ -38,6 +38,6 @@ def test_click_and_keyboard_share_send_with_no_selected_gate():
 
 def test_missing_model_cannot_fail_silently():
     source = composer_source()
-    assert "Informe o modelo OpenAI antes de enviar a mensagem." in source
+    assert "Informe o modelo de IA antes de enviar a mensagem." in source
     assert "draft.value = text" in source
     assert "O JARVIS criará a conversa ao enviar." in source
