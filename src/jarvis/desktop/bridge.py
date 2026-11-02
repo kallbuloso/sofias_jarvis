@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from contextlib import closing
 from uuid import UUID
-from jarvis.memory.personal_confirmation import PersonalMutationGate
+from jarvis.memory.personal_confirmation import (
+    PersonalMutationGate,
+    is_conversational_cancellation,
+    is_conversational_confirmation,
+)
 from jarvis.memory.sensitive import looks_like_credential
 import json
 import os
@@ -39,7 +43,9 @@ class ReplyWorker(QObject):
     def __init__(self, conversation_id: str, prompt: str, model: str, api_key: str, *,
                  memory_scope: str | None = None,
                  knowledge_dataset: str | None = None,
-                 conversational: bool = False):
+                 conversational: bool = False,
+                 confirmed_forget=None,
+                 control_answer: str | None = None):
         super().__init__()
         self.conversation_id = conversation_id
         self.prompt = prompt
@@ -48,10 +54,13 @@ class ReplyWorker(QObject):
         self.memory_scope = memory_scope
         self.knowledge_dataset = knowledge_dataset
         self.conversational = conversational
+        self.confirmed_forget = confirmed_forget
+        self.control_answer = control_answer
         self.routing_status = "NOT_REQUESTED"
         self.create_proposal: dict | None = None
         self.mutation_proposal: dict | None = None
         self.direct_create = None
+        self.direct_update: dict | None = None
         self.cancelled = threading.Event()
 
     @Slot()
@@ -72,8 +81,9 @@ class ReplyWorker(QObject):
             from jarvis.conversation.grounding import GroundedTextProvider
             from jarvis.conversation.intent import TextIntentRouter
             from jarvis.conversation.create_decision import evaluate_direct_create
-            prepared_answer = None
-            if self.conversational:
+            prepared_answer = self.control_answer
+            if (self.confirmed_forget is None and self.control_answer is None
+                    and self.conversational):
                 try:
                     intent = TextIntentRouter(client).classify(
                         model=self.model, utterance=self.prompt,
@@ -150,15 +160,20 @@ class ReplyWorker(QObject):
                                          or not replacement.strip()
                                          or looks_like_credential(replacement))):
                                 raise ValueError("invalid_or_sensitive_replacement")
-                            self.mutation_proposal = {
-                                "action": action,
-                                "memory_id": preview["memory_id"],
-                                "replacement": replacement or "",
-                            }
-                            prepared_answer = (
-                                "Encontrei uma memória correspondente. "
-                                "Revise a prévia antes de confirmar a alteração."
-                            )
+                            if action == "supersede":
+                                self.direct_update = {
+                                    "preview": preview,
+                                    "replacement": replacement.strip(),
+                                }
+                            else:
+                                self.mutation_proposal = {
+                                    "action": "forget",
+                                    "preview": preview,
+                                }
+                                prepared_answer = (
+                                    "Encontrei a memória \"" + preview["content"] +
+                                    "\". Confirma que deseja esquecê-la?"
+                                )
                         except ValueError as exc:
                             reason = str(exc)
                             if reason == "memory_target_ambiguous":
@@ -197,7 +212,141 @@ class ReplyWorker(QObject):
                         "Tente novamente quando o roteamento estiver disponível."
                     )
 
-            if self.direct_create is not None:
+            if self.confirmed_forget is not None:
+                pending = self.confirmed_forget
+
+                class ConfirmedForgetProvider:
+                    def stream_text(inner_self, *, model, messages):
+                        from jarvis.memory.cognitive import CognitiveMemoryClient
+                        from jarvis.memory.connection import configured_memory_url
+                        from jarvis.memory.journal import MemoryOperationJournal
+                        from jarvis.memory.personal_confirmation import (
+                            PersonalMutationAuthorization,
+                        )
+                        from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+                        try:
+                            if self.cancelled.is_set() or runtime is None:
+                                yield "Confirmação interrompida; nada foi esquecido."
+                                return
+                            message_id = runtime.last_user_message_id
+                            if message_id is None:
+                                raise ValueError("missing_confirmation_message")
+                            url = configured_memory_url()
+                            key = WindowsCredentialStore().get_memory_key() if url else None
+                            if not url or not key:
+                                yield ("O Sofias Memory não está disponível. "
+                                       "Nenhuma memória foi esquecida.")
+                                return
+                            reader = CognitiveMemoryClient(url, key)
+                            if reader.diagnose().get("status") != "COMPATIBLE":
+                                yield ("O Sofias Memory está incompatível. "
+                                       "Nenhuma memória foi esquecida.")
+                                return
+                            target = pending.preview["memory_id"]
+                            consent = (
+                                PersonalMutationAuthorization
+                                .from_conversation_confirmation(
+                                    action="forget",
+                                    target_memory_id=target,
+                                    conversation_id=self.conversation_id,
+                                    message_id=message_id,
+                                )
+                            )
+                            service = PersonalMemoryLifecycle(
+                                reader, MemoryOperationJournal(database_path()), url,
+                            )
+                            reply = service.forget(
+                                pending.preview, confirmation=consent,
+                            )
+                            if reply.get("status") == "CONFIRMED":
+                                yield "Informação esquecida."
+                            elif reply.get("status") == "RESULT_UNKNOWN":
+                                yield (
+                                    "O resultado do esquecimento ficou incerto. "
+                                    "Não vou repetir automaticamente; verifique o journal."
+                                )
+                            else:
+                                yield (
+                                    "O Sofias Memory não confirmou o esquecimento "
+                                    f"({reply.get('status', 'FAILED')})."
+                                )
+                        except Exception as exc:
+                            trace("conversational_forget_failed",
+                                  error_class=type(exc).__name__)
+                            yield (
+                                "Não consegui confirmar o esquecimento. "
+                                "Nenhuma nova tentativa será feita automaticamente."
+                            )
+
+                provider = ConfirmedForgetProvider()
+            elif self.direct_update is not None:
+                update = self.direct_update
+
+                class DirectUpdateProvider:
+                    def stream_text(inner_self, *, model, messages):
+                        from jarvis.memory.cognitive import CognitiveMemoryClient
+                        from jarvis.memory.connection import configured_memory_url
+                        from jarvis.memory.journal import MemoryOperationJournal
+                        from jarvis.memory.personal_confirmation import (
+                            PersonalMutationAuthorization,
+                        )
+                        from jarvis.memory.personal_lifecycle import PersonalMemoryLifecycle
+
+                        try:
+                            if self.cancelled.is_set() or runtime is None:
+                                yield "Pedido interrompido antes da atualização."
+                                return
+                            message_id = runtime.last_user_message_id
+                            if message_id is None:
+                                raise ValueError("missing_verified_user_message")
+                            url = configured_memory_url()
+                            key = WindowsCredentialStore().get_memory_key() if url else None
+                            if not url or not key:
+                                yield ("O Sofias Memory não está disponível. "
+                                       "Nenhuma memória foi atualizada.")
+                                return
+                            reader = CognitiveMemoryClient(url, key)
+                            if reader.diagnose().get("status") != "COMPATIBLE":
+                                yield ("O Sofias Memory está incompatível. "
+                                       "Nenhuma memória foi atualizada.")
+                                return
+                            preview = update["preview"]
+                            consent = PersonalMutationAuthorization.from_explicit_user_message(
+                                action="supersede",
+                                target_memory_id=preview["memory_id"],
+                                conversation_id=self.conversation_id,
+                                message_id=message_id,
+                            )
+                            service = PersonalMemoryLifecycle(
+                                reader, MemoryOperationJournal(database_path()), url,
+                            )
+                            reply = service.supersede(
+                                preview, new_content=update["replacement"],
+                                confirmation=consent,
+                            )
+                            if reply.get("status") == "CONFIRMED":
+                                yield "Informação atualizada no Sofias Memory."
+                            elif reply.get("status") == "RESULT_UNKNOWN":
+                                yield (
+                                    "O resultado da atualização ficou incerto. "
+                                    "Não vou repetir automaticamente; verifique o journal."
+                                )
+                            else:
+                                yield (
+                                    "O Sofias Memory não confirmou a atualização "
+                                    f"({reply.get('status', 'FAILED')})."
+                                )
+                        except Exception as exc:
+                            trace("direct_memory_update_failed",
+                                  error_class=type(exc).__name__)
+                            yield (
+                                "Não consegui confirmar a atualização. "
+                                "Nenhuma nova tentativa será feita automaticamente."
+                            )
+
+                provider = DirectUpdateProvider()
+            elif self.direct_create is not None:
                 decision = self.direct_create
 
                 class DirectCreateProvider:
@@ -606,7 +755,8 @@ class JarvisBridge(QObject):
         from jarvis.memory.personal_confirmation import PersonalCreateGate
         self._create_gate = PersonalCreateGate()
         self._deferred_create_proposal: dict | None = None
-        self._deferred_mutation_proposal: dict | None = None
+        self._pending_forget_token: str | None = None
+        self._pending_forget_conversation: str | None = None
         self._mutation_thread: QThread | None = None
         self._mutation_worker: MemoryMutationWorker | None = None
 
@@ -660,6 +810,8 @@ class JarvisBridge(QObject):
         except (TypeError, ValueError, AttributeError):
             return _json({"ok": False, "error": "invalid_conversation"})
         self._mutation_gate.clear()
+        self._pending_forget_token = None
+        self._pending_forget_conversation = None
         self._create_gate.clear()
         deleted = self._store.delete_conversation(conversation_id)
         return _json({"ok": deleted, "error": None if deleted else "unknown_conversation"})
@@ -675,7 +827,35 @@ class JarvisBridge(QObject):
     def sendConversationalMessage(
         self, conversation_id: str, prompt: str, model: str,
     ) -> str:
-        """Single natural-language entry. The classifier never authorizes writes."""
+        """Natural-language entry, including a pending conversational confirmation."""
+        if (self._pending_forget_token is not None
+                and self._pending_forget_conversation == conversation_id):
+            if is_conversational_confirmation(prompt):
+                token = self._pending_forget_token
+                self._pending_forget_token = None
+                self._pending_forget_conversation = None
+                try:
+                    pending = self._mutation_gate.take(token, conversation_id)
+                except (ValueError, KeyError, TypeError):
+                    return _json({"ok": False, "error": "confirmation_expired"})
+                return self._dispatch(
+                    conversation_id, prompt, model, memory_scope=None,
+                    knowledge_dataset=None, conversational=False,
+                    confirmed_forget=pending,
+                )
+            if is_conversational_cancellation(prompt):
+                self._mutation_gate.clear()
+                self._pending_forget_token = None
+                self._pending_forget_conversation = None
+                return self._dispatch(
+                    conversation_id, prompt, model, memory_scope=None,
+                    knowledge_dataset=None, conversational=False,
+                    control_answer="Esquecimento cancelado. Nenhuma memória foi alterada.",
+                )
+            # Any unrelated next turn cancels the stale confirmation context.
+            self._mutation_gate.clear()
+            self._pending_forget_token = None
+            self._pending_forget_conversation = None
         return self._dispatch(
             conversation_id, prompt, model, memory_scope=None,
             knowledge_dataset=None, conversational=True,
@@ -943,6 +1123,8 @@ class JarvisBridge(QObject):
         memory_scope: str | None,
         knowledge_dataset: str | None,
         conversational: bool = False,
+        confirmed_forget=None,
+        control_answer: str | None = None,
     ) -> str:
         trace("bridge_dispatch_requested", worker_active=self.active,
               memory=memory_scope is not None, knowledge=knowledge_dataset is not None)
@@ -950,7 +1132,6 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": "busy"})
         self._create_gate.clear()
         self._deferred_create_proposal = None
-        self._deferred_mutation_proposal = None
         if not model.strip() or not prompt.strip():
             return _json({"ok": False, "error": "missing_text_or_model"})
         if self._store.get_conversation(conversation_id) is None:
@@ -967,6 +1148,8 @@ class JarvisBridge(QObject):
             memory_scope=memory_scope,
             knowledge_dataset=knowledge_dataset,
             conversational=conversational,
+            confirmed_forget=confirmed_forget,
+            control_answer=control_answer,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -1063,65 +1246,30 @@ class JarvisBridge(QObject):
     def _on_conversational_mutation_proposed(
         self, conversation_id: str, raw_proposal: str,
     ) -> None:
-        """Queue a natural-language mutation preview; never execute it here."""
+        """Arm one conversational Forget confirmation; no modal or side effect."""
         if self._closing or self._store.get_conversation(conversation_id) is None:
             self._mutation_gate.clear()
             return
         try:
             proposal = json.loads(raw_proposal)
-            if not isinstance(proposal, dict) or set(proposal) != {
-                "action", "memory_id", "replacement",
-            }:
+            if (not isinstance(proposal, dict)
+                    or set(proposal) != {"action", "preview"}
+                    or proposal["action"] != "forget"
+                    or not isinstance(proposal["preview"], dict)):
                 raise ValueError("invalid_mutation_proposal")
-            action = proposal["action"]
-            memory_id = str(UUID(proposal["memory_id"]))
-            replacement = proposal["replacement"]
-            if action not in {"supersede", "forget"}:
-                raise ValueError("invalid_mutation_action")
-            if not isinstance(replacement, str):
-                raise ValueError("invalid_mutation_replacement")
-            if action == "forget" and replacement:
-                raise ValueError("invalid_forget_replacement")
-            if (action == "supersede"
-                    and (not replacement.strip() or len(replacement) > 16384
-                         or looks_like_credential(replacement))):
-                raise ValueError("invalid_or_sensitive_replacement")
-            self._deferred_mutation_proposal = {
-                "action": action,
-                "memory_id": memory_id,
-                "replacement": replacement,
-                "conversationId": conversation_id,
-            }
+            preview = proposal["preview"]
+            str(UUID(preview["memory_id"]))
+            if not preview.get("source_ref") or not isinstance(preview.get("content"), str):
+                raise ValueError("invalid_forget_preview")
+            token, _ = self._mutation_gate.offer(
+                "forget", preview, "", conversation_id,
+            )
+            self._pending_forget_token = token
+            self._pending_forget_conversation = conversation_id
         except (ValueError, KeyError, TypeError):
             self._mutation_gate.clear()
-            self._deferred_mutation_proposal = None
-            self.streamEvent.emit(_json({
-                "type": "memory_preview", "ok": False,
-                "error": "invalid_natural_mutation_proposal",
-            }))
-
-    def _start_natural_mutation_preview(self, proposal: dict) -> None:
-        """Start the existing read-only preview after the reply thread is quiescent."""
-        if self.active or self._closing:
-            self._mutation_gate.clear()
-            return
-        worker = MemoryPreviewWorker(
-            proposal["action"], proposal["memory_id"],
-            replacement=proposal["replacement"],
-            conversation_id=proposal["conversationId"],
-            approval_mode="click",
-        )
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        self._preview_worker = worker
-        self._preview_thread = thread
-        thread.started.connect(worker.run)
-        worker.finishedPreview.connect(self._on_memory_preview)
-        worker.finishedPreview.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(self._on_preview_thread_finished)
-        trace("natural_memory_preview_thread_starting", action=proposal["action"])
-        thread.start()
+            self._pending_forget_token = None
+            self._pending_forget_conversation = None
 
     @Slot(str, str, str, str)
     def _on_done(self, conversation_id: str, result: str, error_code: str,
@@ -1153,28 +1301,21 @@ class JarvisBridge(QObject):
         self._worker = None
         thread.deleteLater()
         pending = self._deferred_create_proposal
-        mutation_pending = self._deferred_mutation_proposal
         self._deferred_create_proposal = None
-        self._deferred_mutation_proposal = None
         if pending is not None:
             if (not self._closing and self._store.get_conversation(
                     pending["conversationId"]) is not None):
                 self.streamEvent.emit(_json(pending))
             else:
                 self._create_gate.clear()
-        if mutation_pending is not None:
-            if (not self._closing and self._store.get_conversation(
-                    mutation_pending["conversationId"]) is not None):
-                self._start_natural_mutation_preview(mutation_pending)
-            else:
-                self._mutation_gate.clear()
         if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
     def request_shutdown(self) -> None:
         self._create_gate.clear()
         self._deferred_create_proposal = None
-        self._deferred_mutation_proposal = None
+        self._pending_forget_token = None
+        self._pending_forget_conversation = None
         trace("bridge_shutdown_requested", worker_active=self.active)
         self._mutation_gate.clear()
         self._closing = True
