@@ -239,9 +239,17 @@ class ReplyWorker(QObject):
                                        "Nenhuma memória foi esquecida.")
                                 return
                             reader = CognitiveMemoryClient(url, key)
-                            if reader.diagnose().get("status") != "COMPATIBLE":
-                                yield ("O Sofias Memory está incompatível. "
-                                       "Nenhuma memória foi esquecida.")
+                            diagnosis = reader.diagnose().get("status")
+                            if diagnosis != "COMPATIBLE":
+                                state = (
+                                    "indisponível"
+                                    if diagnosis in {"UNAVAILABLE", "SERVICE_UNAVAILABLE"}
+                                    else "incompatível"
+                                )
+                                yield (
+                                    f"O Sofias Memory está {state}. "
+                                    "Nenhuma memória foi esquecida."
+                                )
                                 return
                             target = pending.preview["memory_id"]
                             consent = (
@@ -307,9 +315,17 @@ class ReplyWorker(QObject):
                                        "Nenhuma memória foi atualizada.")
                                 return
                             reader = CognitiveMemoryClient(url, key)
-                            if reader.diagnose().get("status") != "COMPATIBLE":
-                                yield ("O Sofias Memory está incompatível. "
-                                       "Nenhuma memória foi atualizada.")
+                            diagnosis = reader.diagnose().get("status")
+                            if diagnosis != "COMPATIBLE":
+                                state = (
+                                    "indisponível"
+                                    if diagnosis in {"UNAVAILABLE", "SERVICE_UNAVAILABLE"}
+                                    else "incompatível"
+                                )
+                                yield (
+                                    f"O Sofias Memory está {state}. "
+                                    "Nenhuma memória foi atualizada."
+                                )
                                 return
                             preview = update["preview"]
                             consent = PersonalMutationAuthorization.from_explicit_user_message(
@@ -377,9 +393,17 @@ class ReplyWorker(QObject):
                                        "de memória. Nenhuma gravação foi executada.")
                                 return
                             reader = CognitiveMemoryClient(url, key)
-                            if reader.diagnose().get("status") != "COMPATIBLE":
-                                yield ("O Sofias Memory está incompatível. "
-                                       "Nenhuma gravação foi iniciada.")
+                            diagnosis = reader.diagnose().get("status")
+                            if diagnosis != "COMPATIBLE":
+                                state = (
+                                    "indisponível"
+                                    if diagnosis in {"UNAVAILABLE", "SERVICE_UNAVAILABLE"}
+                                    else "incompatível"
+                                )
+                                yield (
+                                    f"O Sofias Memory está {state}. "
+                                    "Nenhuma gravação foi iniciada."
+                                )
                                 return
                             consent = PersonalMutationAuthorization.from_explicit_user_message(
                                 action="create", conversation_id=self.conversation_id,
