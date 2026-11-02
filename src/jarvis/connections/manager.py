@@ -122,6 +122,30 @@ class ConnectionManager:
             ))
         return result
 
+    def create_ai(
+        self, provider_id: str, api_key: str, *, label: str = "",
+    ) -> dict:
+        descriptor = self.registry.get(provider_id)
+        if descriptor is None or descriptor.provider_type != "ai_inference":
+            raise ValueError("AI_PROVIDER_UNKNOWN")
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise ValueError("AUTHENTICATION_REQUIRED")
+        if not isinstance(label, str) or len(label) > 120:
+            raise ValueError("invalid_label")
+
+        connection = self.store.create(
+            provider_id,
+            configuration={"label": label.strip()} if label.strip() else {},
+        )
+        connection_id = connection["id"]
+        try:
+            self.vault.set_connection_secret(connection_id, api_key)
+        except Exception:
+            self.store.delete(connection_id)
+            raise
+        item = self.store.get(connection_id)
+        return self._public(item, configured=True)
+
     def create_github(self, token: str, *, label: str = "") -> dict:
         descriptor = self.registry.get("github")
         if descriptor is None:
