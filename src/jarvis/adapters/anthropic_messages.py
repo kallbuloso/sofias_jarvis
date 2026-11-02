@@ -9,9 +9,33 @@ from typing import Any
 class AnthropicProviderResponseError(RuntimeError):
     """Anthropic failed or did not complete a provider-neutral response."""
 
-    def __init__(self, message: str, *, code: str = "PROVIDER_RESPONSE_INVALID"):
+    def __init__(
+        self, message: str, *, code: str = "PROVIDER_RESPONSE_INVALID",
+        detail: str = "",
+    ):
         self.code = code
+        self.detail = detail
         super().__init__(message)
+
+
+def _safe_api_detail(exc: Exception) -> str:
+    """Keep only Anthropic's normalized error type/message, never raw payloads."""
+    body = getattr(exc, "body", None)
+    error_type = ""
+    message = ""
+    if isinstance(body, dict):
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            raw_type = nested.get("type")
+            raw_message = nested.get("message")
+            if isinstance(raw_type, str):
+                error_type = raw_type.strip()
+            if isinstance(raw_message, str):
+                message = raw_message.strip()
+    parts = [part for part in (error_type, message) if part]
+    detail = ": ".join(parts)
+    detail = " ".join(detail.split())
+    return detail[:500]
 
 
 def _api_error_code(exc: Exception) -> str:
@@ -101,6 +125,7 @@ class AnthropicMessagesAdapter:
             raise AnthropicProviderResponseError(
                 "Anthropic streaming request failed",
                 code=_api_error_code(exc),
+                detail=_safe_api_detail(exc),
             ) from exc
 
         stop_reason = getattr(final, "stop_reason", None)
@@ -142,6 +167,7 @@ class AnthropicMessagesAdapter:
             raise AnthropicProviderResponseError(
                 "Anthropic structured request failed",
                 code=_api_error_code(exc),
+                detail=_safe_api_detail(exc),
             ) from exc
         stop_reason = getattr(response, "stop_reason", None)
         if stop_reason not in {"end_turn", "stop_sequence"}:
