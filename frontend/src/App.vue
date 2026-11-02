@@ -538,7 +538,7 @@ async function startVoice(event) {
       voiceState.value !== 'IDLE' || memoryPreviewBusy.value ||
       memoryMutationBusy.value || createDialog.value || createBusy.value) return
   if (!model.value.trim()) {
-    warning.value = 'Informe o modelo OpenAI antes de usar voz.'
+    warning.value = 'Informe o modelo de IA antes de usar voz.'
     return
   }
   voiceStarting.value = true
@@ -616,7 +616,7 @@ async function sendMessage() {
 
   const legacyMutation = /^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)
   if (!legacyMutation && !model.value.trim()) {
-    warning.value = 'Informe o modelo OpenAI antes de enviar a mensagem.'
+    warning.value = 'Informe o modelo de IA antes de enviar a mensagem.'
     return
   }
 
@@ -734,9 +734,9 @@ onMounted(async () => {
           <div class="toolbar">
             <div>
               <div class="heading">Conversa</div>
-              <div class="small-text">Core Python · OpenAI Responses · SQLite</div>
+              <div class="small-text">Core Python · AI Provider · SQLite</div>
             </div>
-            <v-text-field v-model="model" class="model-input" label="Modelo OpenAI"
+            <v-text-field v-model="model" class="model-input" label="Modelo de IA"
               variant="outlined" density="compact" hide-details
               placeholder="Digite o modelo habilitado"/>
           </div>
@@ -849,15 +849,42 @@ onMounted(async () => {
 
           <v-divider class="my-5"/>
 
-          <div v-if="!integrationConnections.length" class="small-text">
-            Nenhuma conexão externa configurada.
-          </div>
-          <v-card v-for="connection in integrationConnections" :key="connection.id"
-            variant="outlined" class="mb-3">
+          <div class="heading mb-2">AI Providers</div>
+          <v-card v-for="connection in integrationConnections.filter(
+              item => item.provider_type === 'ai_inference')"
+            :key="connection.id" variant="outlined" class="mb-3">
             <v-card-text>
               <div class="integration-row">
                 <div>
-                  <strong>{{ connection.provider_id === 'github' ? 'GitHub' : connection.provider_id }}</strong>
+                  <strong>{{ connection.provider_name }}</strong>
+                  <div>{{ connection.configuration?.label || 'Conexão de inferência' }}</div>
+                  <div class="small-text">
+                    configurada: {{ connection.configured ? 'sim' : 'não' }} ·
+                    habilitada: {{ connection.enabled ? 'sim' : 'não' }}
+                  </div>
+                </div>
+                <div class="integration-actions">
+                  <v-btn size="small" variant="text" :disabled="integrationBusy"
+                    @click="toggleIntegration(connection)">
+                    {{ connection.enabled ? 'Desabilitar' : 'Habilitar' }}
+                  </v-btn>
+                </div>
+              </div>
+            </v-card-text>
+          </v-card>
+
+          <div class="heading mt-5 mb-2">Integrações externas</div>
+          <div v-if="!integrationConnections.some(
+              item => item.provider_type === 'external_integration')" class="small-text">
+            Nenhuma integração externa configurada.
+          </div>
+          <v-card v-for="connection in integrationConnections.filter(
+              item => item.provider_type === 'external_integration')"
+            :key="connection.id" variant="outlined" class="mb-3">
+            <v-card-text>
+              <div class="integration-row">
+                <div>
+                  <strong>{{ connection.provider_name }}</strong>
                   <div>
                     {{ connection.display_identity ||
                       connection.configuration?.label || 'Identidade ainda não verificada' }}
