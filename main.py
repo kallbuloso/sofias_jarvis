@@ -466,27 +466,30 @@ def main() -> int:
         elif args.list_conversations:
             print(json.dumps(store.list_conversations(), ensure_ascii=False, indent=2))
         elif args.chat:
-            from jarvis.adapters.openai_responses import OpenAIResponsesAdapter
+            from jarvis.connections.manager import ConnectionManager
+            from jarvis.connections.store import ConnectionStore
             from jarvis.conversation.runtime import ConversationRuntime
+            from jarvis.inference.factory import build_inference_provider
             from jarvis.secrets.windows import WindowsCredentialStore
 
             model = args.model or os.getenv("JARVIS_MODEL", "")
             if not model.strip():
                 raise ValueError("Choose --model or configure JARVIS_MODEL")
-            key = WindowsCredentialStore().get_openai_key()
-            if not key:
-                raise ValueError("No API key configured; use --configure-openai-key")
-            try:
-                from openai import OpenAI
-            except ImportError as exc:
-                raise RuntimeError("Install the project runtime dependencies") from exc
+            manager = ConnectionManager(
+                ConnectionStore(database_path()), WindowsCredentialStore(),
+            )
+            ai_connection, credential = manager.resolve_ai_connection(
+                provider_id="openai",
+            )
             conversation_id = args.conversation_id or store.create_conversation()
             if store.get_conversation(conversation_id) is None:
                 raise ValueError("Unknown conversation ID")
             prompt = input("Você: ").strip()
             if not prompt:
                 raise ValueError("Message cannot be empty")
-            provider = OpenAIResponsesAdapter(OpenAI(api_key=key))
+            provider = build_inference_provider(
+                ai_connection["provider_id"], credential,
+            )
             memory_provider = None
             knowledge_provider = None
             if args.use_memory:
