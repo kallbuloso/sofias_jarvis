@@ -16,6 +16,8 @@ class ProviderDescriptor:
     status_check_support: bool
     reconnect_support: bool
     provider_revoke_support: bool
+    transport: str = "native"
+    litellm_prefix: str | None = None
 
     def as_dict(self) -> dict:
         data = asdict(self)
@@ -40,6 +42,8 @@ OPENAI = ProviderDescriptor(
     status_check_support=False,
     reconnect_support=True,
     provider_revoke_support=False,
+    transport="litellm",
+    litellm_prefix="openai",
 )
 
 
@@ -57,6 +61,8 @@ ANTHROPIC = ProviderDescriptor(
     status_check_support=True,
     reconnect_support=True,
     provider_revoke_support=False,
+    transport="litellm",
+    litellm_prefix="anthropic",
 )
 
 
