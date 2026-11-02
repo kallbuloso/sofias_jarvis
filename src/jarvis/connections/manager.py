@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 from jarvis.connections.github import GitHubConnectionAdapter, GitHubConnectionError
+from jarvis.connections.ai_verification import (
+    AIConnectionVerificationError,
+    AnthropicConnectionVerifier,
+)
 from jarvis.connections.registry import ProviderRegistry
 from jarvis.connections.store import ConnectionStore
 from jarvis.secrets.windows import WindowsCredentialStore
@@ -13,6 +17,7 @@ class ConnectionManager:
         self.vault = vault
         self.registry = ProviderRegistry()
         self._adapters = {"github": GitHubConnectionAdapter()}
+        self._ai_verifiers = {"anthropic": AnthropicConnectionVerifier()}
 
     def providers(self) -> list[dict]:
         return self.registry.list()
@@ -24,6 +29,9 @@ class ConnectionManager:
             "provider_id": item["provider_id"],
             "provider_type": descriptor.provider_type if descriptor else "unknown",
             "provider_name": descriptor.display_name if descriptor else item["provider_id"],
+            "status_check_support": bool(
+                descriptor.status_check_support if descriptor else False
+            ),
             "display_identity": item["display_identity"],
             "external_account_ref": item["external_account_ref"],
             "configuration": item["configuration"],
@@ -145,6 +153,69 @@ class ConnectionManager:
             raise
         item = self.store.get(connection_id)
         return self._public(item, configured=True)
+
+    def verify_ai(self, connection_id: str) -> dict:
+        item = self.store.get(connection_id)
+        if item is None:
+            raise KeyError("unknown_connection")
+
+        descriptor = self.registry.get(item["provider_id"])
+        if descriptor is None or descriptor.provider_type != "ai_inference":
+            raise ValueError("AI_PROVIDER_UNKNOWN")
+        if not descriptor.status_check_support:
+            raise ValueError("OPERATION_UNSUPPORTED")
+
+        secret = self._secret_for(item)
+        if not secret:
+            updated = self.store.record_inspection(
+                connection_id,
+                display_identity=item["display_identity"],
+                external_account_ref=item["external_account_ref"],
+                observed_permissions=item["observed_permissions"],
+                availability="auth_required",
+                error_code="AUTHENTICATION_REQUIRED",
+            )
+            result = self._public(updated, configured=False)
+            result["available_models"] = []
+            return result
+
+        verifier = self._ai_verifiers.get(item["provider_id"])
+        if verifier is None:
+            raise ValueError("OPERATION_UNSUPPORTED")
+
+        try:
+            observed = verifier.inspect(secret)
+            updated = self.store.record_inspection(
+                connection_id,
+                display_identity=item["display_identity"],
+                external_account_ref=item["external_account_ref"],
+                observed_permissions=item["observed_permissions"],
+                availability=observed["availability"],
+                error_code=None,
+            )
+            result = self._public(updated, configured=True)
+            result["available_models"] = observed["available_models"]
+            return result
+        except AIConnectionVerificationError as exc:
+            availability = {
+                "AUTHENTICATION_REQUIRED": "auth_required",
+                "AUTHENTICATION_FAILED": "auth_required",
+                "EXTERNAL_PERMISSION_INSUFFICIENT": "permission_insufficient",
+                "RATE_LIMITED": "unavailable",
+                "PROVIDER_UNAVAILABLE": "unavailable",
+                "NO_MODELS_AVAILABLE": "permission_insufficient",
+            }.get(exc.code, "error")
+            updated = self.store.record_inspection(
+                connection_id,
+                display_identity=item["display_identity"],
+                external_account_ref=item["external_account_ref"],
+                observed_permissions=item["observed_permissions"],
+                availability=availability,
+                error_code=exc.code,
+            )
+            result = self._public(updated, configured=True)
+            result["available_models"] = []
+            return result
 
     def create_github(self, token: str, *, label: str = "") -> dict:
         descriptor = self.registry.get("github")
