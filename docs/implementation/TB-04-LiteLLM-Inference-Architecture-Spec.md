@@ -1,6 +1,6 @@
 # JARVIS — TB-04 LiteLLM Inference Architecture Transition SPEC
 
-**Status:** PROPOSED — owner review required before implementation  
+**Status:** APPROVED — IMPLEMENTATION STARTED  
 **Date:** 2026-11-02  
 **Branch:** `feat/tb-04-providers-connections`  
 **Scope:** TB-04 — AI Providers, Connections, Model Selection and Future Fallback  
@@ -1004,7 +1004,7 @@ These remain JARVIS responsibilities.
 
 ### TB-04C — LiteLLM transition
 
-**NEXT if this SPEC is approved**
+**IN PROGRESS**
 
 - add `litellm-core`;
 - implement `LiteLLMInferenceAdapter`;
@@ -1110,3 +1110,16 @@ Providers own inference.
 - LiteLLM Gateway architecture: https://docs.litellm.ai/docs/proxy/architecture
 
 Current LiteLLM documentation states that the SDK presents a unified OpenAI-format interface to 100+ providers; `litellm-core` retains provider translation, streaming, Router, retries/fallbacks and provider error mapping with fewer bundled dependencies; Gateway remains available later when centralized keys/budgets/rate limits are needed.
+
+## 29. Owner approval — 2026-11-02
+
+The owner approved this SPEC and explicitly authorized implementation.
+
+Implementation begins with TB-04C using a parallel backend strategy:
+
+- `native` remains the validated rollback baseline;
+- `litellm` is introduced as the candidate provider-compatibility backend;
+- runtime selection is explicit through `JARVIS_INFERENCE_BACKEND`;
+- default remains `native` until OpenAI and Anthropic parity is owner-validated;
+- no automatic fallback, InferenceProfile, Agent binding or third provider is enabled by this approval alone.
+
