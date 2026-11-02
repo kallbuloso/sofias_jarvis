@@ -70,3 +70,48 @@ def test_context_order_limit(tmp_path):
     assert [m["content"] for m in store.completed_context(conversation, limit=2)] == ["2", "3"]
     with pytest.raises(ValueError):
         store.completed_context(conversation, limit=0)
+
+
+def test_delete_one_conversation_cascades_only_local_messages_and_evidence(tmp_path):
+    import sqlite3
+    from uuid import uuid4
+
+    from jarvis.memory.journal import MemoryOperationJournal
+
+    store = SQLiteConversationStore(tmp_path / "state.sqlite3")
+    journal = MemoryOperationJournal(store.path)
+    first = store.create_conversation()
+    second = store.create_conversation()
+    store.append_user_message(first, "Apagar este texto")
+    assistant = store.begin_assistant_message(first)
+    store.append_assistant_delta(assistant, "Consulta documental")
+    store.end_assistant_message(assistant, successful=True)
+    store.save_knowledge_evidence(
+        assistant, dataset="jarvis-knowledge", knowledge_status="NO_RESULTS",
+        query_id=str(uuid4()), references=[],
+    )
+    store.append_user_message(second, "Preservar esta conversa")
+
+    operation_id, memory_id = str(uuid4()), str(uuid4())
+    journal.prepare(operation_id, "https://memory.example", {
+        "idempotency_key": operation_id, "memory_type": "profile",
+        "scope": "global", "content": "Teal",
+        "provenance": {"origin_kind": "user_asserted", "source_system": "jarvis",
+                       "source_ref": "memory-operation:" + operation_id},
+    })
+    journal.claim(operation_id)
+    journal.resolve(operation_id, status="confirmed", memory_id=memory_id)
+
+    assert store.delete_conversation(first) is True
+    assert store.delete_conversation(first) is False
+    assert store.delete_conversation("not-a-uuid") is False
+    with sqlite3.connect(store.path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM message_knowledge_evidence "
+            "WHERE assistant_message_id=?", (assistant,)
+        ).fetchone()[0] == 0
+    reopened = SQLiteConversationStore(store.path)
+    assert reopened.get_conversation(first) is None
+    assert reopened.list_messages(second)[0]["content"] == "Preservar esta conversa"
+    assert journal.get(operation_id)["status"] == "confirmed"
+    assert journal.owned_user_memory(memory_id, "https://memory.example") is not None

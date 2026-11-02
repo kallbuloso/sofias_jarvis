@@ -11,6 +11,7 @@ class SecureStorageUnavailable(RuntimeError):
 
 class WindowsCredentialStore:
     SERVICE = "sofias-jarvis/openai"
+    MEMORY_SERVICE = "sofias-jarvis/sofias-memory"
     ACCOUNT = "default"
 
     @staticmethod
@@ -37,3 +38,14 @@ class WindowsCredentialStore:
 
     def delete_openai_key(self) -> None:
         self._vault().delete_password(self.SERVICE, self.ACCOUNT)
+
+    def get_memory_key(self) -> str | None:
+        return self._vault().get_password(self.MEMORY_SERVICE, self.ACCOUNT)
+
+    def set_memory_key(self, secret: str) -> None:
+        if not secret or not secret.strip():
+            raise ValueError("API key cannot be empty")
+        self._vault().set_password(self.MEMORY_SERVICE, self.ACCOUNT, secret)
+
+    def delete_memory_key(self) -> None:
+        self._vault().delete_password(self.MEMORY_SERVICE, self.ACCOUNT)

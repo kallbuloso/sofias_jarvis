@@ -5,21 +5,21 @@
 | **Projeto** | JARVIS — assistente pessoal universal |
 | **Fase** | 08 — Technical Backlog |
 | **Estado deste documento** | **BASELINE DE PLANEJAMENTO APROVADA** — roadmap inicial TB-01 a TB-08 e plano do TB-01 aprovados pelo proprietário |
-| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31)** — ver `docs/implementation/TB-01-Validation.md`; TB-02 a TB-08 continuam somente no roadmap |
+| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01)** — evidências em `docs/implementation/TB-01-Validation.md` e `docs/implementation/TB-02-Validation.md`; TB-03 a TB-08 permanecem no roadmap |
 | **Data** | 2026-10-30 |
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | Revisar Pull Request do TB-01 e obter aprovação explícita antes do merge; planejar TB-02 separadamente |
+| **Próxima atividade** | Revisar e integrar o PR de conclusão do TB-02; depois detalhar/aprovar TB-03 antes de qualquer implementação de voz |
 
-> **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 a TB-08 são **itens de roadmap**, não Slices detalhados ou autorizados para implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
+> **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
 ## 1. Roadmap inicial do MVP
 
 | Slice | Entrega utilizável esperada | Estado de planejamento |
 |---|---|---|
 | **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
-| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **ROADMAP** — detalhar e aprovar antes de executar |
+| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **PRODUCT DONE (2026-11-01)** — validação final em `docs/implementation/TB-02-Validation.md` |
 | **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **ROADMAP** |
 | **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **ROADMAP** |
 | **TB-05 — Ferramentas de consulta** | Capacidades READ verificadas em dois domínios externos reais | **ROADMAP** |
@@ -167,9 +167,9 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 | **Project** | JARVIS |
 | **Current phase** | 08 — Technical Backlog |
 | **Current artifact** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
-| **Current Slice** | TB-01 — PRODUCT DONE; PR para revisão/merge |
-| **Next legitimate step** | Revisar PR do TB-01 e obter autorização para merge; TB-02 exige planejamento e aprovação próprios |
-| **Forbidden inference** | TB-02 a TB-08 não estão aprovados como planos executáveis; a viabilidade da UI foi demonstrada no TB-01, mas não implica validação futura de voz e confirmações; merge não autorizado automaticamente |
+| **Current Slice** | TB-02 — PRODUCT DONE; PR para revisão/merge |
+| **Next legitimate step** | Revisar/mergear o PR do TB-02; depois planejar e aprovar TB-03 antes de implementar voz |
+| **Forbidden inference** | TB-03 a TB-08 não estão automaticamente aprovados como planos executáveis; TB-02 não implementa voz nem a política geral de execução crítica; merge continua uma ação explícita sobre `main` |
 
 *Fim de JARVIS — Technical Backlog (baseline inicial).* 
 
@@ -178,3 +178,411 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 ## 4. Registro de conclusão do TB-01 (2026-10-31)
 
 O estado **NOT STARTED** nas seções originais de planejamento foi substituído por **PRODUCT DONE** após execução e evidência. O registro completo e as limitações estão em `docs/implementation/TB-01-Validation.md`. Este adendo não autoriza merge, não altera os Slices futuros e não aprova nova stack.
+
+
+---
+
+## 5. Handoff de execução TB-02 (2026-10-31)
+
+O proprietário aprovou o Slice TB-02 após detalhamento do escopo; a instância HTTPS real do Sofias Memory v0.7.0 retornou `api_contract_version=1`, `contracts.cognitive_memory=1` e cinco capabilities cognitivas, sem ausências. A integração de conexão e diagnóstico foi validada na VPS; a suíte local passou com **55 testes**, antes do incremento de escrita controlada. A consulta cognitiva `global` sobre cor preferida retornou `NO_RESULTS`, o que é um resultado vazio válido e não prova ausência em outros escopos ou Knowledge.
+
+Implementação de Cognitive Memory está em andamento na branch `feat/tb-02-memory-knowledge`: adapter dos cinco métodos, leitura por CLI e criação explícita mediante confirmação e journal operacional local. **Novos testes e criação real ainda exigem validação pelo proprietário; não declarar Product Done.** Documento de execução: `docs/implementation/TB-02-Cognitive-Adapter.md`.
+
+
+---
+
+## 6. Atualização factual TB-02 — ciclo cognitivo validado (2026-10-31)
+
+Este adendo registra execução posterior à baseline inicial sem reabrir
+a aprovação do roadmap e sem autorizar merge ou TB-03.
+
+- **Cognitive Memory:** Create/Get/Recall global, contexto em chat e
+  desktop, Supersede e Forget de amostras temporárias concluídos
+  contra o Sofias Memory v0.7.0. Um par A→B foi esquecido separadamente
+  com tombstones sem conteúdo e sem escopo ativo. Memória pessoal
+  \`global/profile\` (preferência teal) permaneceu ativa e intacta.
+- **Segurança operacional:** confirmação textual por operação, journal
+  SQLite de idempotência, allowlist local e verificação de proveniência
+  no serviço antes de mudar memórias temporárias.
+- **Validação:** o proprietário reportou \`127 passed in 3.90s\` no Windows
+  após a correção do teste multiline. Build frontend anterior também
+  havia passado (\`vite build\`).
+- **Knowledge Retrieval:** adapter CLI para dataset discovery e recall
+  em modo chunks implementado, mas os quatro datasets reais listados
+  estavam \`deleted\`; ainda não há evidência de recuperação com
+  referências de um dataset ativo.
+- **Estado:** TB-02 **IN PROGRESS** até evidência documental e critérios
+  restantes. TB-03 a TB-08 não estão autorizados para implementação.
+  \`main\` não foi alterada.
+- **Registro detalhado:** \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`.
+
+**Próximo passo legítimo:** escolher com o proprietário um documento
+real, não sensível, e um dataset ativo no Sofias Memory (ou aprovar
+expressamente sua criação/ingestão), então validar a cadeia documental
+de trechos e proveniência sem introduzir memória cognitiva artificial.
+
+
+## 7. TB-02 — autorização documental e incremento ADR-0001
+
+Proprietário autorizou explicitamente criar um dataset no Sofias Memory e ingerir um ADR não sensível do repositório para completar a validação de Knowledge Retrieval. Dataset fixo `jarvis-knowledge`; somente a seção ADR-0001 do arquivo aprovado `docs/product-manager/07-JARVIS-ADRs.md`; comandos confirmados e sem retry automático. Foram implementados adapter e testes offline para Dataset Create, Remember `mode=full` (Run assíncrono), inspeção de Run, contadores e recuperação com proveniência. **Execução e validação reais na VPS pendentes**. Sem merge na `main`, sem avanço para TB-03. Roteiro: `docs/implementation/TB-02-ADR-Knowledge-Validation.md`.
+
+## 9. TB-02 — Knowledge no contexto do chat (implementação CLI)
+
+A validação real da consulta documental ao ADR-0001 retornou
+`RESULTS_FOUND` com Query ID
+`a7a09ded-706f-4627-8772-39d27bcf7651`, contexto e referência
+com os mesmos Source/Document/Chunk IDs. O retrieval do dataset
+`jarvis-knowledge` está **validado no CLI documental**.
+
+Incremento seguinte implementado na branch: provider
+`KnowledgeAwareTextProvider` com opt-in exclusivo via
+`--chat --use-knowledge --knowledge-dataset jarvis-knowledge`.
+A composição preserva o histórico operacional do SQLite, trata
+documentos como evidência de baixa confiança e limita a contextualização
+ao dataset ativo de nome esperado, com referências ligadas ao contexto.
+
+Os testes offline do novo fluxo foram adicionados, mas aguardam
+validação Windows do proprietário. O smoke real conversacional e
+a integração do desktop ainda são pendentes. **TB-02 IN PROGRESS**;
+nenhuma autorização de merge ou avanço ao TB-03.
+
+## 10. TB-02 — implementação desktop Knowledge (pendente de validação)
+
+Após a validação CLI `164 passed in 6.06s`, o proprietário comprovou
+que `--chat --use-knowledge --knowledge-dataset jarvis-knowledge`
+recuperou o ADR-0001 e exibiu um Source/Document/Chunk verificado
+na resposta. Sem Knowledge, `--chat` funcionou normalmente sem
+metadados de recuperação.
+
+Novo incremento na branch: WebChannel
+`sendMessageWithContext(conversation_id, prompt, model, memory_scope,
+knowledge_dataset)` com validação de scope/dataset e capacidade de
+ativar Knowledge independentemente da Cognitive Memory.
+`ReplyWorker` consulta o dataset aprovado no serviço; as
+referências e o Query ID trafegam em sinal separado, sem segredos,
+com contexto apenas efêmero. No Vue, switches separados começam
+OFF, o dataset exige seleção explícita e fontes verificadas podem
+ser expandidas sem transformar `url=null` em link.
+
+Novos testes offline do worker e boundary do bridge adicionados.
+**Testes e Vite build deste incremento ainda não executados no Windows;**
+aceite visual/funcional do desktop pendente. Ver
+`docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
+
+TB-02 **IN PROGRESS**; `main` e TB-03 permanecem intocados.
+
+
+## 11. TB-02 — Desktop Smoke com Qt e Knowledge: PASS (2026-10-31)
+
+Foi confirmado pelo proprietário após correção de afinidade do
+`QThread.finished`:
+
+- `172 passed in 4.90s` no Windows;
+- três turnos reais no mesmo processo: sem Memory/Knowledge, somente
+  Knowledge, e Cognitive Memory + Knowledge;
+- os três `ReplyWorker` terminaram com `result=completed`;
+- todos os `bridge_thread_finished` chegaram na thread da GUI,
+  `in_gui_thread=true`;
+- `window_close_accepted`, `qt_about_to_quit` e
+  `qt_event_loop_exit=0`, sem aborto observado nesta sessão;
+- o proprietário confirmou funcionamento simultâneo do Cognitive Memory
+  e Knowledge; a evidência anterior incluiu fontes verificadas do ADR.
+
+**Aceite de smoke desktop/lifecycle:** PASS. O incidente anterior
+`Fatal Python error: Aborted` / `QDxgiVSyncService not destroyed in time`
+permanece documentado, sem inferir causa-raiz definitiva com base em
+um único ensaio pós-correção. Instrumentação segura permanece disponível
+por opt-in para diagnóstico de regressão.
+
+**Estado TB-02:** revisão consolidada dos critérios de Product Done
+pendente. Smoke aprovado não equivale automaticamente a merge nem
+a autorização do TB-03. Fonte:
+`docs/implementation/TB-02-Desktop-Knowledge-Smoke.md`.
+
+
+## 12. Revisão final de aceite TB-02 — findings (2026-10-31)
+
+A revisão consolidada foi publicada em
+`docs/implementation/TB-02-Final-Acceptance-Review.md`.
+
+**PASS**: conectividade, Create/Get/Recall, Supersede/Forget de
+memórias descartáveis, Knowledge Retrieval real com referências,
+chat CLI e desktop ON/OFF, 172 testes Windows, Vite build e smoke
+Qt com 3 turnos/saída 0.
+
+**Ainda não declarar Product Done**: B-01 (mutações cognitivas
+pessoais `Supersede/Forget` ausentes da experiência conversacional);
+B-02 (referências de Knowledge efêmeras, não associadas de forma
+durável à mensagem). Há limites de prova para indisponibilidade real,
+conflitos multi-documento e causa-raiz definitiva do antigo
+`QDxgiVSyncService`.
+
+**Próximo passo proposto:** finalização restrita dentro de TB-02,
+sujeita à decisão do proprietário sobre os findings. Sem merge na
+`main`, sem TB-03.
+
+## 13. TB-02 Finalization — B-01a (Core/CLI) committed, pending tests
+
+Owner approved B-01 (supervised personal Cognitive Memory mutations) and
+B-02 (durable documentary provenance). Implementation order: B-01 first;
+B-02 only after validating B-01.
+
+B-01a in feature branch adds a personal-mutation service and explicit CLI
+`--memory-supersede UUID` / `--memory-forget UUID`, with confirmed
+local ownership check, matching remote provenance and HTTPS service,
+preview, exact UUID consent, recheck immediately before mutation,
+journal/idempotency, no automatic retry and unknown-outcome blocking.
+TB-02 disposable test memories remain isolated. New offline tests were
+committed but are **not yet run on the owner's Windows machine**.
+
+**Not yet B-01 Product Done:** conversational intent/desktop confirmation
+flow and human smoke on a new authorized test record. Existing personal
+memories MUST NOT be used for the initial regression test.
+
+**Not yet B-02:** source metadata persists only in the current UI turn;
+durable message-linked provenance still to be implemented.
+
+Main branch remains untouched. No TB-03.
+
+## 14. TB-02 B-01b — Desktop Preview Gate (read-only; verification pending)
+
+The B-01a Core/CLI suite passed on the owner's Windows machine:
+**185 passed in 7.84s**. The earlier estimate of 186 cases was
+incorrect (172 pre-existing + 9 lifecycle + 4 CLI = 185).
+
+Next commit introduced a deliberately read-only conversational preview
+for explicit `/esquecer UUID` and `/atualizar UUID | conteúdo`
+commands. The UI shows only the verified owner-controlled record and
+a **Close without changing** action. Preview executes on a Qt worker
+and cannot perform a memory mutation. Four new Qt tests are committed,
+but Windows pytest and Vite build are pending human evidence.
+
+Next legitimate step: validate 189 tests / frontend build and preview
+a JARVIS-owned memory **without confirming a write**. Then add a
+separately tested one-use authorization/execute path, plus supervised
+Create; only thereafter B-01 Product Done review. B-02 remains pending.
+The prior Qt crash regression is still observed during desktop smoke.
+No merge to main, no TB-03.
+
+## 15. TB-02 B-01b accepted; B-01c code pending Windows validation
+
+The owner confirmed the desktop read-only preview operated correctly
+and the prior personal `global/profile` teal record was unchanged and
+`active` before and after the interaction. B-01b visual acceptance = PASS.
+
+B-01c implementation on the feature branch adds an expiring,
+single-use, conversation-bound authorization token and an exact
+typed `SUBSTITUIR UUID` / `ESQUECER UUID` phrase. The GUI preview
+now provides a separate, explicitly labeled confirmation button.
+The intent is consumed before a Qt worker performs an ownership and
+remote-state recheck via `PersonalMemoryLifecycle`, with journal
+persistence/idempotency. The old preview-only WebChannel method
+remains available. Cancellation works only while an operation is
+pending; committed requests are not silently cancelled or replayed.
+
+Five offline tests were added over the latest accepted 189-test
+baseline. Expected local result: **194 passed** (not executed yet).
+Frontend build and human smoke are also pending.
+
+Do not operate on the preserved teal memory. Any real mutation
+verification requires a newly created, authorized disposable personal
+record after static and cancel-only tests pass. B-01 is not Product
+Done. B-02 remains scheduled for the next increment; no merge/main,
+no TB-03.
+
+## 16. TB-02 B-01d — Consent audit follow-up pending acceptance
+
+Owner reported disposable blue memory successfully forgotten in Sofias
+Memory (`lifecycle=forgotten`, `content=null`, `scope=null`).
+The local journal query reported matching
+`user_forget` operation ID
+`6e925d24-1205-4864-9a69-79fc6616d154`, `confirmed`,
+`error_code=NULL`. Functional supervised mutation flow **PASS**.
+
+Found a traceability gap: those journal rows prove execution and
+status, not durable typed consent. B-01d now implemented on the feature
+branch, adding non-retroactive SQLite v4 consent metadata tied to each
+new operation. Desktop and CLI caller sites were updated; mutation
+lifecycle rejects absent/mismatched receipts. Dedicated tests were
+added for legacy NULL, replay blocking, atomicity, restart, CLI
+consent and fake desktop worker. **Authoring environment has not run
+the Windows pytest suite or Vite build.** Await results before B-01
+Product Done. Existing confirmed mutations stay historical, without
+fabricated consent evidence. No merge to main and no TB-03.
+
+## 17. TB-02 finalization checkpoint — B-01 PASS, B-02a implementation pending test
+
+Owner validated the B-01d SQLite v4 migration on Windows:
+`202 passed in 7.54s`, Vite built 559 modules in 5.55s,
+and historical `--memory-operation` returned `confirmed` with
+all newly added authorization columns `null`, correctly avoiding
+retroactive consent. Earlier human evidence confirmed the full
+disposable Create → Supersede → Forget lifecycle, matching local
+journal outcomes and preserved existing personal teal preference.
+**B-01 functional and contract acceptance = PASS**; not a TB-02
+Product Done or merge authorization.
+
+B-02a now implemented on `feat/tb-02-memory-knowledge`:
+SQLite v5 sidecar `message_knowledge_evidence` on exact assistant
+message ID; validated/size-bounded Knowledge references and query/
+dataset/retrieval status/time; no full chunks, quotes or fabricated
+URLs persisted. Retrieval metadata is loaded with chat history and
+shown per assistant message, including after restart or switching
+conversations. Failed/interrupted answers are not marked completed.
+The existing `jarvis-knowledge` dataset restriction remains intact.
+New offline tests cover isolation, recovery, migration, failure,
+duplicate evidence and worker persistence.
+
+**B-02a NOT YET ACCEPTED:** new v5 migration requires another
+production SQLite backup and Windows pytest/Vite, followed by
+desktop Knowledge smoke with restart/switching. Expected automated
+collection `214` based on 202 previous + 12 new parametrized
+cases (not verified locally). See
+`docs/implementation/TB-02-B02-Message-Evidence.md`.
+No TB-03 implementation, no `main` merge.
+
+## 18. TB-02 — B-02a accepted by human desktop smoke (2026-11-01)
+
+Human owner provided screenshot and confirmed complete B-02a behavior:
+`Consulta Knowledge: RESULTS_FOUND`, a real ADR-0001 source,
+verified `source_id/document_id/chunk_id` displayed within the exact
+assistant response; same references remained after switching between
+conversations and after restarting JARVIS; desktop shutdown was normal.
+This followed pre-v5 SQLite backup, **214 passed in 8.38s** and successful
+Vite build (5.23s). **B-02a = PASS**.
+
+TB-02 broader readiness remains subject to final Product Done
+review and explicit approval, with two acceptance distinctions:
+(1) personal Create remains CLI-supervised and is not yet exposed
+as conversational `/lembrar` on desktop (unlike desktop Supersede/Forget);
+the PRD-02 FR-010/SPEC-04 S04-AC01 user-journey interpretation
+must not be silently watered down;
+(2) a dedicated owner-operated controlled degraded-service smoke
+has not yet been observed (SPEC-04 S04-AC08).
+Contradictory multi-source Knowledge evaluation is also outside the
+single-ADR pilot and should not be claimed as validated.
+
+See `docs/implementation/TB-02-Final-Acceptance-Review.md` §6
+and `docs/implementation/TB-02-B02-Message-Evidence.md`.
+The branch remains isolated; **no merge** or TB-03 work was authorized.
+
+## 19. Text-first conversational correction and local conversation cleanup
+
+Owner clarified that **desktop chat must be natural-language-first**.
+Exposing slash commands and UUIDs as the primary user interface was a
+misinterpretation of the JARVIS product, even if equivalent CLI commands
+remain useful for diagnostics. Text is the first milestone; audio input,
+microphone capture, TTS and voice confirmation are deferred until the
+text path works end-to-end.
+
+The feature branch now contains a first, **NOT YET ACCEPTED** vertical
+increment: strictly typed text intent classification, automatic
+read-only Cognitive Recall/Knowledge selection using existing providers,
+single desktop `sendConversationalMessage` entry, and removal of manual
+Memory/Knowledge switches and slash-help banner from the UI.
+Unimplemented memory writes and scheduler requests are **recognized
+but not executed**; the UI receives an explicit no-operation response,
+never a fabricated success. Intent model failure also fails closed.
+
+Owner also requested removing numerous old conversations during
+development. Sidebar now has a per-conversation **Excluir** action with
+confirmation; deletion cascades only local transcript and its verified
+per-message Knowledge evidence. It does not delete Sofias Memory
+records or JARVIS audit journal, rejects active operations, and does not
+recreate an empty conversation after the last deletion.
+
+The increment has new offline test fixtures; owner Windows pytest,
+frontend build, startup/shutdown and real model classification remain
+pending. **TB-02 Product Done remains NOT ACCEPTED**, and neither
+merge nor TB-03 has been authorized.
+
+The next legitimate text milestone is **natural-language Create,
+Supersede and Forget with structured proposed operation, target and
+scope resolution, user-friendly approval bound to one operation, durable
+audit and real ACK**; no typed UUIDs, no side effect from model output
+alone. Scheduling remains a different product capability.
+See `docs/implementation/TB-02-Conversational-Text-Increment-1.md`.
+
+## 20. TB-02 — Text-first desktop accepted; supervised natural Create pending Windows tests
+
+Owner supplied a desktop screenshot and explicitly confirmed all four
+requested text-entry/deletion checks. Screenshot shows automatic
+Cognitive Recall of the genuine teal preference; truthful recognition
+of a next-day reminder without a scheduler; natural Create intent
+recognition with no unauthorized write; deletion affordances and absence
+of Memory/Knowledge switches. Owner confirmed the Knowledge and
+conversation deletion checks as well. This closes **Text Increment 1,
+human acceptance PASS**, following prior Windows `235 passed` and
+Vite build success.
+
+The next feature-branch increment has been implemented, **not yet
+executed/accepted on Windows**: user-readable natural Create preview,
+clarification between general vs project-JARVIS scope when ambiguous,
+one-click cancel/approval without slash grammar/UUID, 180-second
+single-use conversation-bound token, `desktop_approved` local journal
+receipt, idempotent remote Create and verified ACK, and post-ACK
+content-free assistant confirmation persisted in the local transcript.
+A dedicated Qt signal defers the preview until reply thread cleanup.
+Offline tests added (expected 245 total; not verified by owner).
+
+First human smoke MUST be **cancel-only** with a fresh disposable
+request. A real service mutation requires separate explicit owner
+approval after tests and cancellation smoke. Existing global teal
+preference must never be mutated. No general natural Update/Forget,
+scheduler, voice, unapproved dataset discovery, `main` merge, or
+TB-03 work has been enabled.
+
+See `docs/implementation/TB-02-Conversational-Create-Increment-2.md`.
+
+## 21. Owner-approved direct low-risk Create authority — implementation pending Windows acceptance
+
+The owner approved a policy change on 2026-11-01: an explicit,
+unambiguous, low-risk request from the current user to remember
+a fact is itself authorization for **that exact Cognitive Create**.
+A second click is unnecessary. LLM classification is still only a
+proposal; an independent Core decision evaluates the persisted
+original user message, exact content, intended scope, sensitivity,
+authorization and provider compatibility before execution.
+Ambiguous, quoted, inferred, compound, sensitive, temporal and
+other-project requests remain blocked/clarified. Update, Forget,
+tasks/scheduler, autonomous candidate capture and voice are unchanged.
+
+The latest branch has a conservative `evaluate_direct_create`
+decision policy; a `user_direct_intent` audit receipt bound to
+`user-message:<uuid>` with unique replay prevention; a re-validation
+inside `PersonalMemoryLifecycle`; and synchronous reply-thread
+execution only after the user message is stored. Response confirms
+success only on real Memory ACK; UNKNOWN is not retried. Human-facing
+text gets one final assistant result, without a second-click dialog.
+Existing click authorization remains available as fallback/engineering
+path but is no longer emitted for safe direct Create.
+
+**Implementation status: UNVERIFIED on Windows**; tests added but not
+executed on owner environment. See the exact policy amendment:
+`docs/product-manager/09-JARVIS-Direct-Memory-Authorization-Amendment.md`.
+TB-02 remains open, feature branch only, no main merge. End-to-end
+natural Update/Forget remains deferred pending target resolution.
+
+---
+
+## 22. TB-02 — PRODUCT DONE (2026-11-01)
+
+Este registro substitui apenas o **estado atual** dos checkpoints anteriores; eles permanecem no documento como histórico de execução.
+
+Validação final reportada pelo proprietário no Windows:
+
+- **297 passed in 11.71s** na regressão completa;
+- **Vite production build PASS** — 559 módulos, 5.49s;
+- Create natural explícito: gravação direta confirmada;
+- Update natural explícito: Supersede direto confirmado, sem modal;
+- Forget natural: confirmação no próprio chat (`Confirmo.`) e esquecimento confirmado;
+- desktop permaneceu operacional após o ciclo de mutações;
+- degradação controlada do Sofias Memory bloqueou escrita sem alegar sucesso;
+- Knowledge Retrieval + proveniência durável já haviam sido validados em smoke real.
+
+A semântica de autoridade aceita no fechamento é proporcional ao risco: Create/Update de baixo risco e inequívocos podem usar a própria ordem persistida; Forget exige confirmação conversacional; operações críticas futuras ficam fora do TB-02 e poderão exigir confirmação adicional de UI.
+
+**Estado final:** **TB-02 PRODUCT DONE**.  
+**Evidência consolidada:** `docs/implementation/TB-02-Validation.md`.  
+**TB-03 não é autorizado automaticamente por este fechamento.**
+

@@ -16,6 +16,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from jarvis.desktop.bridge import JarvisBridge
+from jarvis.desktop.diagnostics import install_qt_diagnostics, trace
 
 
 class LocalOnlyRequests(QWebEngineUrlRequestInterceptor):
@@ -48,14 +49,17 @@ class LocalOnlyPage(QWebEnginePage):
 class JarvisWindow(QMainWindow):
     def __init__(self, assets_root: Path):
         super().__init__()
-        self.setWindowTitle("JARVIS · TB-01")
+        self.setWindowTitle("JARVIS · TB-02")
         self.resize(1280, 820)
         self._bridge = JarvisBridge(self)
         self._bridge.attach_window(self)
+        trace("window_construct_begin")
         self._profile = QWebEngineProfile(self)  # off-the-record profile
         self._interceptor = LocalOnlyRequests(assets_root, self)
         self._profile.setUrlRequestInterceptor(self._interceptor)
         self._view = QWebEngineView(self)
+        self._view.renderProcessTerminated.connect(self._on_renderer_terminated)
+        self._view.loadFinished.connect(self._on_view_loaded)
         self._page = LocalOnlyPage(self._profile, assets_root / "index.html", self._view)
         self._view.setPage(self._page)
         self._channel = QWebChannel(self._page)
@@ -63,13 +67,25 @@ class JarvisWindow(QMainWindow):
         self._page.setWebChannel(self._channel)
         self.setCentralWidget(self._view)
         self._view.setUrl(QUrl.fromLocalFile(str(assets_root / "index.html")))
+        trace("window_construct_end")
+
+    def _on_view_loaded(self, ok: bool) -> None:
+        trace("webengine_load_finished", ok=bool(ok))
+
+    def _on_renderer_terminated(self, status, exit_code: int) -> None:
+        trace("webengine_renderer_terminated",
+              status=str(getattr(status, "name", "unknown")),
+              exit_code=int(exit_code))
 
     def closeEvent(self, event):
+        trace("window_close_requested", worker_active=self._bridge.active)
         if self._bridge.active:
             self._bridge.request_shutdown()
             event.ignore()
             self.setWindowTitle("JARVIS · encerrando resposta…")
+            trace("window_close_deferred")
             return
+        trace("window_close_accepted")
         super().closeEvent(event)
 
 
@@ -80,7 +96,13 @@ def launch_desktop() -> int:
         print("Frontend não compilado: execute 'npm install' e 'npm run build' em frontend/.",
               file=sys.stderr)
         return 2
+    install_qt_diagnostics()
+    trace("desktop_launch")
     app = QApplication.instance() or QApplication(sys.argv)
+    app.aboutToQuit.connect(lambda: trace("qt_about_to_quit"))
     window = JarvisWindow(assets_root)
     window.show()
-    return app.exec()
+    trace("qt_event_loop_enter")
+    exit_code = app.exec()
+    trace("qt_event_loop_exit", exit_code=int(exit_code))
+    return exit_code

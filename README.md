@@ -1,7 +1,8 @@
 # JARVIS
 
-Local-first, independent AI assistant. **TB-01 implementation is in progress**;
-neither the desktop UI nor all acceptance criteria have been validated on Windows.
+Local-first independent AI assistant. TB-01 is Product Done, merged to main
+after 16 passing tests and owner validation. TB-02 is in progress on its
+own feature branch.
 
 ## TB-01 implemented so far
 
@@ -11,8 +12,7 @@ neither the desktop UI nor all acceptance criteria have been validated on Window
 - native Windows Credential Manager via verified `keyring` backend;
 - candidate desktop: PySide6 WebEngine + Vue 3 + Vuetify 3 with a restricted Qt WebChannel bridge.
 
-The source tree contains a preliminary desktop proof of concept. It has **not**
-yet received human Windows UI validation. The Core is independent of Qt.
+The desktop was validated by the owner on Windows 11. The Core is independent of Qt.
 
 ## Development on Windows 11
 
@@ -72,3 +72,164 @@ use the same local operational store under
   after compatibility validation, not silently assumed complete.
 
 See `docs/product-manager/08-JARVIS-Technical-Backlog.md` for acceptance tests.
+
+## TB-02 step 01 — connection (under validation)
+
+Configure a non-secret Sofias Memory URL in the local data directory and
+a separate API key in Windows Credential Manager. The diagnostic checks
+health and authenticated capability negotiation only, without memory writes.
+
+    .\.venv\Scripts\python.exe main.py --configure-memory-url "https://pefil-sofias-memory.q8cqqr.easypanel.host"
+    .\.venv\Scripts\python.exe main.py --configure-memory-key
+    .\.venv\Scripts\python.exe main.py --memory-check
+
+Expected status: COMPATIBLE. Never provide the API key in chat or command arguments.
+
+## TB-02 step 02 — Cognitive Memory adapter (under validation)
+
+The Core now has a separate API client for **Create / Get / typed Recall /
+Supersede / Forget**. It uses explicit scopes and provenance, checks the
+returned lifecycle, and requires a caller-owned UUID idempotency key on every
+mutation. It does not perform blind retries after uncertain writes.
+
+The first live smoke is intentionally **read-only**, without storing or
+deleting data in your Sofias Memory instance:
+
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope global
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope project:jarvis
+    .\.venv\Scripts\python.exe main.py --memory-get EXISTING_MEMORY_UUID
+
+The recall command prompts for the query locally, avoiding shell-history
+storage. Scope is mandatory and exact; global is never silently added to
+project-specific queries. Expect \`NO_RESULTS\` when there are no relevant
+memories; network failures and incompatible responses are *not* empty results.
+
+Mutating methods are **not yet wired to the chat UI/CLI**. Before using those
+against a live service, the JARVIS Core must persist authorization, operation
+identity and outcome evidence to reconcile uncertain results correctly.
+No conversational automatic cognitive writes are enabled.
+
+
+### Explicit memory write smoke (requires your local confirmation)
+
+Once the automated tests pass, you can deliberately save **one
+non-sensitive test preference** to the live service. This is an intentional
+persistent write, not just a diagnostic read:
+
+    .\.venv\Scripts\python.exe main.py --memory-create --memory-scope global --memory-type profile
+
+At \`Informação para lembrar:\`, enter a harmless preference, e.g.
+\`Para interfaces gráficas, prefiro a cor teal.\`. Check scope and type, then
+type **GRAVAR** to consent. Any other response cancels. Success returns
+\`CONFIRMED\` and a \`memory_id\`. This write is durable in Sofias Memory.
+
+Then verify:
+
+    .\.venv\Scripts\python.exe main.py --memory-recall --memory-scope global
+    .\.venv\Scripts\python.exe main.py --memory-get UUID_FROM_CONFIRMED_RESULT
+
+An operation can be inspected locally without sending it again:
+
+    .\.venv\Scripts\python.exe main.py --memory-operation OPERATION_UUID
+
+If a write yields \`RESULT_UNKNOWN\`, do **not** repeat it with a fresh key.
+The original attempt is journaled locally for deliberate reconciliation.
+Confirmed and rejected operations have their original content removed from
+the local journal. This version has no automatic retry/reconciliation.
+A conservative credential-content filter blocks common secret markers.
+
+
+## TB-02 step 03 — memory-assisted console chat (opt-in)
+
+A live Cognitive Memory Create and Recall have been verified by the owner.
+**A memory-assisted OpenAI answer is not yet validated**; the next smoke
+uses the explicit \`--use-memory\` switch:
+
+    .\.venv\Scripts\python.exe main.py --chat --model gpt-6-luna --use-memory --memory-scope global
+
+When prompted, ask: \`Qual minha cor preferida para interfaces gráficas?\`.
+A successful response should use the retrieved teal preference and report
+\`"memory_retrieval": "RESULTS_FOUND"\` with the memory ID. This runs one
+read-only cognitive recall before normal inference and transmits the prompt
+to the configured Sofias Memory instance. The prompt is sent there only
+because \`--use-memory\` was explicitly selected.
+
+Without the opt-in flag, \`--chat\` remains unchanged. With missing or
+unavailable Memory, the OpenAI text turn can still proceed, while the model
+receives an explicit \`UNAVAILABLE\` retrieval status and must not claim
+to have recovered a memory. If Memory returns no matches, status is
+\`NO_RESULTS\` (not an outage). Memory data and references are ephemeral
+context, not persistent SQLite conversation messages or privileged
+instructions. The JARVIS UI is **not yet** memory-aware; this smoke is
+console-only.
+
+Scope is mandatory and exact; use multiple \`--memory-scope\` options
+only when intentionally querying more than one scope. Writes remain
+disabled by default during conversation.
+
+
+## TB-02 step 05 — Knowledge Retrieval (first read-only adapter)
+
+Knowledge Memory is **not** the same API as Cognitive Memory. The
+new CLI lists existing dataset slugs, then queries a **selected dataset**
+using \`POST /api/v1/recall\` with \`mode=chunks\`, \`only_context=true\`
+and \`include_references=true\`. This avoids a second generated answer
+from Sofias Memory. The service **does record a Query audit ID** for
+each recall; the command does not ingest, edit, forget or delete knowledge.
+
+    .\.venv\Scripts\python.exe main.py --knowledge-datasets
+    .\.venv\Scripts\python.exe main.py --knowledge-query --knowledge-dataset YOUR_DATASET_SLUG
+
+At \`Consulta documental:\`, enter your question. The output preserves
+\`query_id\`, \`source_id\`, \`document_id\`, \`chunk_id\` and any returned
+reference/quote. If the dataset is not already populated, discovery can
+work yet retrieval may return \`NO_RESULTS\`. Choose an existing dataset
+from the first command; do not assume \`main\` is populated.
+
+The Python adapter and its CLI are an **intermediate TB-02 increment**.
+Knowledge integration into desktop response/context and full provenance
+display have **not** been accepted yet.
+
+## Desktop presentation mini-fix
+
+After the owner reported 88 PASS and a successful Vite build, screenshot
+inspection found an oversized generic warning panel (missing scope) and
+raw Markdown \`**teal**\` text. The feature branch now uses bounded,
+non-expanding warning elements and escaped Vue-text rendering of basic
+inline **bold** only. Full CommonMark, rich HTML and arbitrary clickable
+links are intentionally not supported; do not add \`v-html\` for
+untrusted model content. Rebuild the frontend after updating.
+
+## TB-02 supervised disposable memory lifecycle
+
+Supersede/Forget are **not** general-purpose CLI commands. They operate
+only on temporary fixed-content memories registered by the dedicated local
+TB-02 test flow. They require per-UUID explicit confirmation and are never
+used by ordinary chat.
+
+    .\.venv\Scripts\python.exe main.py --memory-test-list
+    .\.venv\Scripts\python.exe main.py --memory-test-create
+    .\.venv\Scripts\python.exe main.py --memory-test-supersede ID_A
+    .\.venv\Scripts\python.exe main.py --memory-test-forget ID_B
+    .\.venv\Scripts\python.exe main.py --memory-test-forget ID_A
+
+Do not execute the mutation commands before the new full pytest suite
+passes. See \`docs/implementation/TB-02-Supersede-Forget-Smoke.md\`
+for exact permissions, expected tombstone evidence, and safe-stop rules.
+
+
+## TB-02 — Ingestão controlada do ADR-0001 para Knowledge Retrieval
+
+O fluxo de ingestão é restrito ao ADR-0001 aprovado. Não envia o repositório
+inteiro e não faz retry automático. Criação do dataset e ingestão precisam
+de confirmações distintas. A API key permanece no Windows Credential Manager.
+
+    .\.venv\Scripts\python.exe main.py --knowledge-create-dataset
+    .\.venv\Scripts\python.exe main.py --knowledge-datasets
+    .\.venv\Scripts\python.exe main.py --knowledge-ingest-adr
+    .\.venv\Scripts\python.exe main.py --knowledge-run RUN_ID
+    .\.venv\Scripts\python.exe main.py --knowledge-stats
+    .\.venv\Scripts\python.exe main.py --knowledge-query --knowledge-dataset jarvis-knowledge
+
+Consulte `docs/implementation/TB-02-ADR-Knowledge-Validation.md` para o
+roteiro completo, confirmação, custeio e critérios de proveniência.
