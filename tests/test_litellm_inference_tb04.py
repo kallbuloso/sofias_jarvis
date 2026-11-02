@@ -235,3 +235,11 @@ def test_invalid_backend_fails_closed(monkeypatch):
         InferenceProviderError, match="INFERENCE_BACKEND_INVALID"
     ):
         build_inference_provider("openai", "PRIVATE")
+
+def test_default_litellm_backend_rejects_unknown_provider_explicitly(monkeypatch):
+    monkeypatch.delenv("JARVIS_INFERENCE_BACKEND", raising=False)
+    with pytest.raises(
+        InferenceProviderError, match="AI_PROVIDER_UNKNOWN"
+    ):
+        build_inference_provider("not-real", "PRIVATE")
+
