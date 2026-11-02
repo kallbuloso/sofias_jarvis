@@ -141,8 +141,23 @@ def test_anthropic_connection_is_separate_disabled_and_secret_free_in_sqlite(tmp
 
     enabled = manager.set_enabled(item["id"], True)
     assert enabled["enabled"] is True
+
+    class Verifier:
+        def inspect(self, secret):
+            assert secret == "ANTHROPIC-PRIVATE"
+            return {
+                "availability": "available",
+                "available_models": [
+                    {"id": "claude-sonnet-5-5", "lifecycle": "active"}
+                ],
+            }
+
+    manager._ai_verifiers["anthropic"] = Verifier()
+    manager.verify_ai(item["id"])
     resolved, secret = manager.resolve_ai_connection(
-        provider_id="anthropic", connection_id=item["id"],
+        provider_id="anthropic",
+        connection_id=item["id"],
+        model_id="claude-sonnet-5-5",
     )
     assert resolved["id"] == item["id"]
     assert secret == "ANTHROPIC-PRIVATE"
