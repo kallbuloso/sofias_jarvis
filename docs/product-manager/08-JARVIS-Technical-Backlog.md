@@ -10,7 +10,7 @@
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | Revisar e integrar o PR de conclusão do TB-03; depois detalhar/aprovar TB-04 antes de implementar providers/connections adicionais |
+| **Próxima atividade** | TB-04 Increment 1: Connection Core + GitHub real com fine-grained PAT, identidade, disponibilidade e lifecycle local |
 
 > **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
@@ -21,7 +21,7 @@
 | **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
 | **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **PRODUCT DONE (2026-11-01)** — validação final em `docs/implementation/TB-02-Validation.md` |
 | **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **PRODUCT DONE (2026-11-02)** — validação final em `docs/implementation/TB-03-Validation.md` |
-| **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **ROADMAP** |
+| **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **APPROVED / IN PROGRESS** — plano em `docs/implementation/TB-04-Providers-Connections-Plan.md` |
 | **TB-05 — Ferramentas de consulta** | Capacidades READ verificadas em dois domínios externos reais | **ROADMAP** |
 | **TB-06 — Execução supervisionada** | Confirmação, política, journal e um efeito externo real verificável | **ROADMAP** |
 | **TB-07 — Tarefas persistentes** | Tarefa multietapa com progresso, interrupção e recuperação segura | **ROADMAP** |
@@ -619,4 +619,27 @@ Evidência final:
 **Estado final:** **TB-03 PRODUCT DONE**.  
 **Evidência consolidada:** `docs/implementation/TB-03-Validation.md`.  
 **TB-04 não é autorizado automaticamente por este fechamento.**
+
+---
+
+## 25. TB-04 — Providers e conexões iniciado
+
+TB-04 passa de ROADMAP para **APPROVED / IN PROGRESS** reutilizando SPEC-05, SPEC-06, CONTRACT-01, CONTRACT-07 e ARCH-06 já aprovados.
+
+A pendência `ARCH-R05 / PRD OQ-01` fica resolvida para o MVP com dois domínios externos reais:
+
+- **GitHub**
+- **Google Calendar**
+
+O Slice separa explicitamente Provider, Connection e Capability; credenciais ficam fora do SQLite; estado de configuração, habilitação, autorização/permissões e disponibilidade permanece dimensional, não um status linear único.
+
+Incrementos:
+
+1. Connection Core + GitHub real via fine-grained PAT.
+2. Google Calendar via OAuth 2.0 Desktop, scopes e reconnect/refresh.
+3. superfície mínima `Integrations & Settings` no desktop para consultar/configurar/check/enable/disable/remove.
+
+TB-04 não executa tools de negócio. Consultas reais via capabilities pertencem ao TB-05; efeitos externos pertencem ao TB-06.
+
+Plano: `docs/implementation/TB-04-Providers-Connections-Plan.md`.
 
