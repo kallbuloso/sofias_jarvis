@@ -54,6 +54,18 @@ def test_disabled_selected_anthropic_never_silently_falls_back_to_openai(
     )
     manager.set_enabled(anthropic["id"], True)
 
+    class Verifier:
+        def inspect(self, secret):
+            return {
+                "availability": "available",
+                "available_models": [
+                    {"id": "claude-sonnet-5-5", "lifecycle": "active"}
+                ],
+            }
+
+    manager._ai_verifiers["anthropic"] = Verifier()
+    manager.verify_ai(anthropic["id"])
+
     selected = json.loads(bridge.selectAIConnection(
         "anthropic", anthropic["id"], "claude-sonnet-5-5",
     ))
