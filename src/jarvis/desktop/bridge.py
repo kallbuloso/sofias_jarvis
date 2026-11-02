@@ -63,6 +63,7 @@ class ReplyWorker(QObject):
         self.control_answer = control_answer
         self.routing_status = "NOT_REQUESTED"
         self.routing_error_code = ""
+        self.routing_error_detail = ""
         self.create_proposal: dict | None = None
         self.mutation_proposal: dict | None = None
         self.direct_create = None
@@ -213,6 +214,10 @@ class ReplyWorker(QObject):
                         getattr(exc, "code", None)
                         or type(exc).__name__
                     )
+                    detail = getattr(exc, "detail", "")
+                    self.routing_error_detail = (
+                        detail if isinstance(detail, str) else ""
+                    )[:500]
                     trace(
                         "conversational_router_unavailable",
                         error_class=type(exc).__name__,
@@ -1914,6 +1919,9 @@ class JarvisBridge(QObject):
             ),
             "routingError": (
                 self._worker.routing_error_code if self._worker is not None else ""
+            ),
+            "routingErrorDetail": (
+                self._worker.routing_error_detail if self._worker is not None else ""
             ),
         }))
 
