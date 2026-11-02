@@ -152,7 +152,7 @@ def test_existing_v4_database_migrates_without_changing_history(tmp_path):
     assert reopened.list_messages(cid)[0]["content"] == "Texto antes da migração"
     assert "knowledgeEvidence" not in reopened.list_messages(cid)[0]
     with sqlite3.connect(path) as raw:
-        assert raw.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == 6
     reopened.save_knowledge_evidence(mid, dataset=DATASET,
         knowledge_status="NO_RESULTS", query_id=None, references=[])
 
