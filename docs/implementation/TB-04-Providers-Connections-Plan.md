@@ -335,3 +335,26 @@ Next real diagnostic: run `Verificar` on the existing Anthropic connection.
 If it reports `available`, investigate the classifier request/error
 separately; do not replace the key blindly.
 
+## Anthropic structured-output compatibility fix — 2026-11-02
+
+Real Anthropic inference returned the precise rejection:
+
+`invalid_request_error: output_config.format.schema: Invalid schema: Enum value None does not match declared type ['string', 'null']`
+
+Root cause:
+- the canonical Core intent schema represents nullable enum `scope` as
+  `type=["string","null"]` + `enum=[null,...]`;
+- Anthropic's structured-output validator rejected that specific combination.
+
+Fix:
+- keep the canonical Core schema unchanged;
+- normalize only the schema sent through `AnthropicMessagesAdapter`;
+- nullable enums are translated to `anyOf` with a typed enum branch plus a
+  `{"type":"null"}` branch;
+- ordinary nullable fields without enum remain untouched;
+- normalization creates a provider-specific copy and never mutates the Core
+  schema in place.
+
+This keeps CONTRACT-04 provider-neutral while containing Anthropic-specific
+schema quirks inside the adapter boundary.
+
