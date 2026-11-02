@@ -6,9 +6,8 @@ all side-effect authorization and memory-service credentials.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 _ACTIONS = frozenset({
     "chat", "memory_recall", "knowledge_query", "memory_create",
@@ -74,28 +73,29 @@ def validate_intent(data: Any) -> TextIntent:
     return TextIntent(action, scope, content)
 
 
+class StructuredJSONProvider(Protocol):
+    def generate_json(
+        self, *, model: str, messages: list[dict],
+        schema_name: str, schema: dict,
+    ) -> dict: ...
+
+
 class TextIntentRouter:
     """One bounded LLM classification; never executes a tool."""
 
-    def __init__(self, client: Any):
-        self.client = client
+    def __init__(self, provider: StructuredJSONProvider):
+        self.provider = provider
 
     def classify(self, *, model: str, utterance: str) -> TextIntent:
         if not isinstance(utterance, str) or not 1 <= len(utterance.strip()) <= 8192:
             raise ValueError("invalid_utterance")
-        reply = self.client.responses.create(
+        data = self.provider.generate_json(
             model=model,
-            input=[
+            messages=[
                 {"role": "developer", "content": _POLICY},
                 {"role": "user", "content": utterance.strip()},
             ],
-            text={"format": {
-                "type": "json_schema", "name": "jarvis_text_intent",
-                "strict": True, "schema": _SCHEMA,
-            }},
-            stream=False,
+            schema_name="jarvis_text_intent",
+            schema=_SCHEMA,
         )
-        raw = getattr(reply, "output_text", None)
-        if not isinstance(raw, str) or len(raw) > 18000:
-            raise ValueError("invalid_router_response")
-        return validate_intent(json.loads(raw))
+        return validate_intent(data)
