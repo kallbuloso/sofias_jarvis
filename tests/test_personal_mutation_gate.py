@@ -1,6 +1,11 @@
 from uuid import uuid4
 import pytest
-from jarvis.memory.personal_confirmation import PersonalMutationGate, PersonalCreateGate
+from jarvis.memory.personal_confirmation import (
+    PersonalMutationGate,
+    PersonalCreateGate,
+    is_conversational_cancellation,
+    is_conversational_confirmation,
+)
 
 def test_one_use_token():
     memory_id = str(uuid4())
@@ -111,3 +116,22 @@ def test_natural_desktop_mutation_approval_is_one_use_and_conversation_bound():
         gate.approve(other_token, str(uuid4()))
     with pytest.raises(ValueError):
         gate.approve(other_token, conversation_id)
+
+def test_conversational_confirmation_is_explicit_and_pending_gate_is_one_use():
+    memory_id = str(uuid4())
+    conversation_id = str(uuid4())
+    gate = PersonalMutationGate(now=lambda: 100.0)
+    token, _ = gate.offer(
+        "forget", {"memory_id": memory_id, "source_ref": "origin"},
+        "", conversation_id,
+    )
+    pending = gate.take(token, conversation_id)
+    assert pending.action == "forget"
+    assert pending.preview["memory_id"] == memory_id
+    assert is_conversational_confirmation("Confirmo")
+    assert is_conversational_confirmation("Sim, confirmo.")
+    assert is_conversational_cancellation("Cancela")
+    assert not is_conversational_confirmation("talvez")
+    with pytest.raises(ValueError):
+        gate.take(token, conversation_id)
+
