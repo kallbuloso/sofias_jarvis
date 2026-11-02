@@ -70,6 +70,13 @@ const aiConnectionItems = computed(() =>
       value: item.id,
     }))
 )
+const selectedAIConnection = computed(() =>
+  integrationConnections.value.find(item => item.id === aiConnectionId.value)
+)
+const aiModelItems = computed(() => {
+  const models = selectedAIConnection.value?.configuration?.observed_models
+  return Array.isArray(models) ? models : []
+})
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
 function inlineParts(value) {
@@ -353,7 +360,20 @@ function handleStream(raw) {
       memoryNotice.value = statuses[event.memoryStatus] || ''
     }
     if (event.routingStatus === 'UNAVAILABLE' && event.conversationId === selected.value) {
-      warning.value = 'Roteamento de intenções indisponível; nenhuma ação automática de memória foi executada.'
+      const routingErrors = {
+        MODEL_NOT_AVAILABLE: 'O modelo selecionado não está disponível nesta conexão Anthropic.',
+        BILLING_UNAVAILABLE: 'A Anthropic aceitou a credencial, mas a conta não está disponível para inferência por cobrança/créditos.',
+        PROVIDER_REQUEST_INVALID: 'A Anthropic recusou a requisição estruturada do roteador.',
+        RATE_LIMITED: 'A Anthropic limitou temporariamente as requisições.',
+        PROVIDER_UNAVAILABLE: 'A Anthropic está temporariamente indisponível.',
+        PROVIDER_TIMEOUT: 'A Anthropic excedeu o tempo de resposta.',
+        PERMISSION_INSUFFICIENT: 'A conexão Anthropic não possui permissão para esta inferência.',
+        AUTHENTICATION_FAILED: 'A autenticação Anthropic falhou durante a inferência.',
+      }
+      warning.value = routingErrors[event.routingError] ||
+        ('Roteamento de intenções indisponível' +
+          (event.routingError ? ' (' + event.routingError + ')' : '') +
+          '; nenhuma ação automática de memória foi executada.')
     }
     if (event.status !== 'completed') {
       warning.value = event.status === 'interrupted'
@@ -534,13 +554,31 @@ async function configureAnthropic() {
   }
 }
 
+function chooseModelForConnection(providerId, connection) {
+  const observed = connection?.configuration?.observed_models
+  const models = Array.isArray(observed) ? observed : []
+  const saved = aiModelPreferences.value[providerId]
+  if (saved && (!models.length || models.includes(saved))) return saved
+  if (models.length) return models[0]
+  return saved || (providerId === 'anthropic' ? 'claude-sonnet-5-5' : '')
+}
+
 function onAIProviderChanged(providerId) {
   aiProvider.value = providerId || ''
   const first = aiConnections.value.find(item => item.provider_id === providerId)
   aiConnectionId.value = first?.id || ''
-  const saved = aiModelPreferences.value[providerId]
-  model.value = saved || (providerId === 'anthropic' ? 'claude-sonnet-5-5' : '')
+  model.value = chooseModelForConnection(providerId, first)
   credentialConfigured.value = Boolean(first)
+}
+
+function onAIConnectionChanged(connectionId) {
+  aiConnectionId.value = connectionId || ''
+  const connection = integrationConnections.value.find(
+    item => item.id === connectionId
+  )
+  if (connection) model.value = chooseModelForConnection(
+    connection.provider_id, connection,
+  )
 }
 
 async function ensureAISelection() {
@@ -888,8 +926,16 @@ onMounted(async () => {
                 variant="outlined"
                 density="compact"
                 hide-details
-                :disabled="busy || !aiProvider"/>
-              <v-text-field v-model="model" class="model-input" label="Modelo de IA"
+                :disabled="busy || !aiProvider"
+                @update:model-value="onAIConnectionChanged"/>
+              <v-select v-if="aiModelItems.length"
+                v-model="model"
+                :items="aiModelItems"
+                class="model-input"
+                label="Modelo de IA"
+                variant="outlined" density="compact" hide-details/>
+              <v-text-field v-else v-model="model" class="model-input"
+                label="Modelo de IA"
                 variant="outlined" density="compact" hide-details
                 placeholder="Digite o modelo habilitado"/>
             </div>
