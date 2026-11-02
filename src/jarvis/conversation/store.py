@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import UUID, uuid4
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def _now() -> str:
@@ -181,6 +181,43 @@ class SQLiteConversationStore:
                     ON integration_connections(provider_id, enabled, updated_at)
                 """)
                 db.execute("PRAGMA user_version = 6")
+                version = 6
+            if version == 6:
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS inference_profiles (
+                        id TEXT PRIMARY KEY,
+                        slug TEXT NOT NULL UNIQUE,
+                        name TEXT NOT NULL,
+                        configuration_json TEXT NOT NULL,
+                        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS inference_bindings (
+                        id TEXT PRIMARY KEY,
+                        scope_type TEXT NOT NULL CHECK (
+                            scope_type IN ('global','project','conversation','agent','task')
+                        ),
+                        scope_id TEXT NOT NULL,
+                        profile_id TEXT NOT NULL
+                            REFERENCES inference_profiles(id) ON DELETE CASCADE,
+                        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(scope_type, scope_id),
+                        CHECK (
+                            (scope_type = 'global' AND scope_id = '*') OR
+                            (scope_type <> 'global' AND length(scope_id) > 0)
+                        )
+                    )
+                """)
+                db.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_inference_bindings_profile
+                    ON inference_bindings(profile_id, enabled, scope_type)
+                """)
+                db.execute("PRAGMA user_version = 7")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
