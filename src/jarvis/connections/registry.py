@@ -54,7 +54,7 @@ ANTHROPIC = ProviderDescriptor(
     ),
     supported_auth_methods=("api_key",),
     multi_connection_support=True,
-    status_check_support=False,
+    status_check_support=True,
     reconnect_support=True,
     provider_revoke_support=False,
 )
