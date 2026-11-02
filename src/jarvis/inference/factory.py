@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from jarvis.adapters.openai_responses import OpenAIResponsesAdapter
+from jarvis.adapters.anthropic_messages import AnthropicMessagesAdapter
 
 
 class InferenceProviderError(RuntimeError):
@@ -23,5 +24,13 @@ def build_inference_provider(provider_id: str, credential: str):
             raise InferenceProviderError("PROVIDER_RUNTIME_MISSING") from exc
         client = OpenAI(api_key=credential.strip(), timeout=30.0)
         return OpenAIResponsesAdapter(client)
+
+    if provider_id == "anthropic":
+        try:
+            from anthropic import Anthropic
+        except ImportError as exc:
+            raise InferenceProviderError("PROVIDER_RUNTIME_MISSING") from exc
+        client = Anthropic(api_key=credential.strip(), timeout=30.0)
+        return AnthropicMessagesAdapter(client)
 
     raise InferenceProviderError("AI_PROVIDER_UNSUPPORTED")
