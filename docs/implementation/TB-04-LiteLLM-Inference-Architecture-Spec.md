@@ -1274,3 +1274,46 @@ Security/policy invariants:
 - no Agent/Task domain object is synthesized by this increment;
 - disabled or invalid selected policy fails closed.
 
+## 34. TB-04D7 profile-management UI checkpoint — 2026-11-02
+
+A first owner-facing inference policy surface has been implemented.
+
+Bridge surface:
+
+- list inference profiles;
+- create a named inference profile from an already valid AI Connection/model;
+- inspect the effective inference plan for one Conversation;
+- bind a profile to one Conversation;
+- remove the Conversation binding to inherit the global profile again.
+
+Desktop behavior:
+
+- toolbar now exposes `Perfil da conversa`;
+- the inherited state is explicit: `Herdar do perfil global`;
+- resolved provenance is visible:
+  - profile slug;
+  - winning scope;
+  - provider/model;
+- the existing Provider / Connection / Model controls continue to edit the
+  canonical global `general` profile;
+- Integrations exposes current profiles and allows creating an additional
+  named profile from the currently selected Connection/model;
+- profile UI is non-secret and never receives credentials;
+- opening a Conversation refreshes its effective inference plan;
+- changing the physical global selection refreshes both profile metadata and
+  effective Conversation resolution;
+- deleting a Conversation also removes its Conversation-scoped inference
+  binding, preventing orphaned operational policy.
+
+Deliberately not implemented in this checkpoint:
+
+- Project/Agent/Task management UI;
+- profile deletion/editing beyond the existing `general` primary selector;
+- automatic fallback;
+- LiteLLM Auto Router;
+- cost routing;
+- synthetic Project/Agent/Task entities.
+
+This checkpoint requires focused regression, full Python regression, frontend
+production build and a Windows desktop smoke before acceptance.
+
