@@ -95,7 +95,7 @@ def test_existing_v1_database_is_migrated_without_losing_messages(tmp_path):
     new = SQLiteConversationStore(path)
     assert new.list_messages(conv)[0]["content"] == "Histórico antigo"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
         assert db.execute("SELECT name FROM sqlite_master WHERE name='cognitive_write_operations'").fetchone()
 
 
@@ -141,7 +141,7 @@ def test_v2_to_v3_migration_preserves_pending_create_journal(tmp_path):
     assert reopened.get(op_id)["status"] == "prepared"
     assert reopened.claim(op_id)["payload"] == payload
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
 def test_legacy_journal_does_not_invent_authorization(tmp_path):
@@ -252,7 +252,7 @@ def test_existing_v3_database_migrates_to_v4_without_faking_human_consent(tmp_pa
     assert operation["confirmation_conversation_id"] is None
     assert operation["confirmed_by_user_at"] is None
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
         columns = {row[1] for row in db.execute(
             "PRAGMA table_info(cognitive_write_operations)"
         )}
