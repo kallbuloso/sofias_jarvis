@@ -23,6 +23,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from jarvis.config import database_path
 from jarvis.desktop.diagnostics import trace
 from jarvis.desktop.model_preferences import bootstrap_model, save_preferred_model
+from jarvis.desktop.ai_preferences import load_ai_selection, save_ai_selection
 from jarvis.conversation.runtime import ConversationRuntime
 from jarvis.conversation.store import SQLiteConversationStore
 from jarvis.secrets.windows import WindowsCredentialStore
@@ -828,6 +829,12 @@ class IntegrationConnectionWorker(QObject):
                 item = manager.create_github(
                     self.payload["token"], label=self.payload.get("label", ""),
                 )
+            elif self.action == "create_ai":
+                item = manager.create_ai(
+                    self.payload["provider_id"],
+                    self.payload["token"],
+                    label=self.payload.get("label", ""),
+                )
             elif self.action == "inspect":
                 item = manager.inspect(self.payload["connection_id"])
             else:
@@ -881,6 +888,8 @@ class JarvisBridge(QObject):
         self._connection_thread: QThread | None = None
         self._connection_worker: IntegrationConnectionWorker | None = None
         self._connection_result: dict | None = None
+        self._active_ai_provider = "openai"
+        self._active_ai_connection_id: str | None = None
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -899,34 +908,81 @@ class JarvisBridge(QObject):
 
     @Slot(result=str)
     def bootstrap(self) -> str:
-        ai_connection = None
+        manager = self._connection_manager()
+        openai_connection = None
         try:
-            ai_connection = (
-                self._connection_manager().ensure_default_openai_connection()
-            )
+            openai_connection = manager.ensure_default_openai_connection()
         except Exception as exc:
             trace("openai_connection_bootstrap_failed",
                   error_class=type(exc).__name__)
-        from jarvis.memory.connection import configured_memory_url
 
+        selection = load_ai_selection()
+        selected_connection = None
+        selected_model = ""
+        if selection is not None:
+            try:
+                candidate = manager.store.get(selection["connection_id"])
+                if (candidate is not None
+                        and candidate["provider_id"] == selection["provider_id"]):
+                    public, _ = manager.resolve_ai_connection(
+                        provider_id=selection["provider_id"],
+                        connection_id=selection["connection_id"],
+                    )
+                    selected_connection = public
+                    selected_model = selection["models"].get(
+                        selection["provider_id"], "",
+                    )
+            except Exception:
+                selected_connection = None
+
+        if selected_connection is None and openai_connection is not None:
+            self._active_ai_provider = "openai"
+            self._active_ai_connection_id = openai_connection["id"]
+            selected_connection = openai_connection
+            selected_model = bootstrap_model()
+        elif selected_connection is not None:
+            self._active_ai_provider = selected_connection["provider_id"]
+            self._active_ai_connection_id = selected_connection["id"]
+            if not selected_model and self._active_ai_provider == "openai":
+                selected_model = bootstrap_model()
+        else:
+            self._active_ai_provider = "openai"
+            self._active_ai_connection_id = None
+            selected_model = bootstrap_model()
+
+        from jarvis.memory.connection import configured_memory_url
         try:
             memory_configured = bool(
                 configured_memory_url() and WindowsCredentialStore().get_memory_key()
             )
         except Exception:
             memory_configured = False
+
+        connections = manager.list_connections()
         return _json({
             "ok": True,
             "memoryConfigured": memory_configured,
             "conversations": self._store.list_conversations(),
-            "model": bootstrap_model(),
+            "model": selected_model,
             "credentialConfigured": bool(
-                ai_connection and ai_connection.get("configured")
-                and ai_connection.get("enabled")
+                selected_connection and selected_connection.get("configured")
+                and selected_connection.get("enabled")
             ),
-            "aiProvider": "openai" if ai_connection else None,
+            "aiProvider": (
+                selected_connection.get("provider_id")
+                if selected_connection else self._active_ai_provider
+            ),
             "aiConnectionId": (
-                ai_connection.get("id") if ai_connection else None
+                selected_connection.get("id") if selected_connection else None
+            ),
+            "aiConnections": [
+                item for item in connections
+                if item.get("provider_type") == "ai_inference"
+            ],
+            "aiModelPreferences": (
+                selection.get("models", {}) if selection else {
+                    "openai": selected_model
+                } if selected_model else {}
             ),
         })
 
@@ -974,6 +1030,60 @@ class JarvisBridge(QObject):
         thread.finished.connect(self._on_connection_thread_finished)
         thread.start()
         return _json({"ok": True, "pending": True, "action": action})
+
+    @Slot(str, str, str, result=str)
+    def configureAIConnection(
+        self, provider_id: str, label: str, token: str,
+    ) -> str:
+        if not isinstance(token, str) or not token.strip():
+            return _json({"ok": False, "error": "missing_token"})
+        if not isinstance(label, str) or len(label) > 120:
+            return _json({"ok": False, "error": "invalid_label"})
+        descriptor = self._connection_manager().registry.get(provider_id)
+        if descriptor is None or descriptor.provider_type != "ai_inference":
+            return _json({"ok": False, "error": "AI_PROVIDER_UNKNOWN"})
+        return self._start_connection_worker(
+            "create_ai",
+            {
+                "provider_id": provider_id,
+                "label": label.strip(),
+                "token": token.strip(),
+            },
+        )
+
+    @Slot(str, str, str, result=str)
+    def selectAIConnection(
+        self, provider_id: str, connection_id: str, model: str,
+    ) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            connection_id = str(UUID(connection_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_connection"})
+        if not isinstance(model, str) or not model.strip():
+            return _json({"ok": False, "error": "missing_model"})
+        try:
+            item, _ = self._connection_manager().resolve_ai_connection(
+                provider_id=provider_id,
+                connection_id=connection_id,
+            )
+            save_ai_selection(provider_id, connection_id, model.strip())
+            if provider_id == "openai":
+                save_preferred_model(model.strip())
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+        self._active_ai_provider = item["provider_id"]
+        self._active_ai_connection_id = item["id"]
+        return _json({
+            "ok": True,
+            "providerId": item["provider_id"],
+            "connectionId": item["id"],
+            "model": model.strip(),
+        })
 
     @Slot(str, str, result=str)
     def configureGitHubConnection(self, label: str, token: str) -> str:
@@ -1599,7 +1709,8 @@ class JarvisBridge(QObject):
         try:
             ai_connection, credential = (
                 self._connection_manager().resolve_ai_connection(
-                    provider_id="openai",
+                    provider_id=self._active_ai_provider,
+                    connection_id=self._active_ai_connection_id,
                 )
             )
         except Exception as exc:
@@ -1640,9 +1751,16 @@ class JarvisBridge(QObject):
         # This is a desktop preference, not the cognitive memory store.
         # Do not abort an accepted reply if the local preference write fails.
         try:
-            save_preferred_model(model.strip())
+            if self._active_ai_connection_id is not None:
+                save_ai_selection(
+                    self._active_ai_provider,
+                    self._active_ai_connection_id,
+                    model.strip(),
+                )
+            if self._active_ai_provider == "openai":
+                save_preferred_model(model.strip())
         except (OSError, ValueError) as exc:
-            trace("desktop_model_preference_write_failed",
+            trace("desktop_ai_preference_write_failed",
                   error_class=type(exc).__name__)
         trace("bridge_thread_started_request")
         return _json({"ok": True, "conversationId": conversation_id})
