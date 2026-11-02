@@ -143,3 +143,21 @@ Implemented local speech output through PySide6 `QTextToSpeech`:
 
 The deprecated OpenAI Speech API was deliberately not introduced as the default TTS path.
 
+## Increment 2 human acceptance — 2026-11-02
+
+Owner validated on Windows:
+
+- voice-origin assistant replies are spoken through local TTS;
+- the same persisted assistant text is used for speech output;
+- `Parar voz` interrupts playback without removing the textual answer or cancelling conversation/work;
+- natural spoken Create succeeded;
+- natural spoken Forget produced the conversational confirmation question;
+- spoken `Confirmo.` was transcribed as a final user turn in the same Conversation;
+- the existing one-use Forget confirmation gate executed successfully;
+- JARVIS replied `Informação esquecida.` and spoke the result;
+- desktop remained open and usable.
+
+**Functional voice vertical: PASS.**
+
+Remaining Product Done gate: one final full pytest regression and one production frontend build on the owner Windows environment.
+
