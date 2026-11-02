@@ -1120,6 +1120,25 @@ Implementation begins with TB-04C using a parallel backend strategy:
 - `native` remains the validated rollback baseline;
 - `litellm` is introduced as the candidate provider-compatibility backend;
 - runtime selection is explicit through `JARVIS_INFERENCE_BACKEND`;
-- default remains `native` until OpenAI and Anthropic parity is owner-validated;
+- OpenAI and Anthropic parity was owner-validated on 2026-11-02; default is now `litellm`;
 - no automatic fallback, InferenceProfile, Agent binding or third provider is enabled by this approval alone.
+
+## 30. TB-04C parity acceptance — 2026-11-02
+
+Owner validated the LiteLLM backend with both configured AI providers:
+
+- OpenAI through LiteLLM: PASS;
+- Anthropic through LiteLLM: PASS;
+- same JARVIS Conversation behavior: PASS;
+- the native backend remains available as explicit rollback.
+
+Decision enacted:
+
+- default inference backend is now `litellm`;
+- `JARVIS_INFERENCE_BACKEND=native` remains the temporary rollback switch;
+- no automatic fallback or routing has been enabled;
+- native adapters remain only until full regression/build acceptance and the
+  planned cleanup phase.
+
+Next gate: full regression, frontend production build and Windows desktop smoke.
 
