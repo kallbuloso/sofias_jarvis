@@ -232,3 +232,31 @@ Owner validated the Connection Manager foundation:
 
 This proves the generic connection lifecycle. Work now continues with **Increment 1B — OpenAI as an AI Connection**; Google Calendar is intentionally paused.
 
+## Increment 1B implementation checkpoint — 2026-11-02
+
+Implemented:
+
+- OpenAI registered as `provider_type=ai_inference`;
+- existing OpenAI Credential Manager entry represented by a normal AI Connection via non-secret `credential_ref=legacy:openai:default`;
+- no duplicate API key is created during migration;
+- desktop bootstrap materializes the OpenAI AI Connection lazily when the legacy credential exists;
+- desktop reply dispatch resolves `provider_id + connection_id + credential` through Connection Manager;
+- CLI `--chat` uses the same AI Connection resolution path;
+- inference provider construction moved behind `jarvis.inference.factory`;
+- `ReplyWorker` no longer imports or constructs OpenAI directly;
+- `TextIntentRouter` now depends on provider-neutral structured JSON capability;
+- OpenAI adapter implements both streaming text and structured JSON under the CONTRACT-04 boundary;
+- Memory and Knowledge wrappers continue to wrap the resolved provider without knowing its implementation;
+- desktop labels changed from `Modelo OpenAI` to `Modelo de IA`;
+- Integrations UI now separates **AI Providers** from **External Integrations**;
+- OpenAI AI Connection can be enabled/disabled independently;
+- automatic provider fallback remains unimplemented.
+
+Focused regression additions:
+
+- `tests/test_ai_connections_tb04.py`;
+- provider-neutral intent-router tests;
+- existing worker tests updated from `api_key` to generic `credential`.
+
+Real Windows validation is still pending.
+
