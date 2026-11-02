@@ -80,7 +80,12 @@ class InferenceResolver:
         self, context: InferenceResolutionContext,
     ) -> tuple[dict, str, str | None]:
         if context.requested_profile_id is not None:
-            profile = self.profiles.get_profile(context.requested_profile_id)
+            try:
+                profile = self.profiles.get_profile(context.requested_profile_id)
+            except ValueError as exc:
+                raise InferenceResolutionError(
+                    "INFERENCE_PROFILE_NOT_FOUND"
+                ) from exc
             if profile is None:
                 raise InferenceResolutionError("INFERENCE_PROFILE_NOT_FOUND")
             return profile, "request", None
@@ -167,12 +172,25 @@ class InferenceResolver:
         if not isinstance(requirements, dict) or not isinstance(constraints, dict):
             raise InferenceResolutionError("INFERENCE_PROFILE_INVALID")
 
+        unknown_requirements = set(requirements) - set(
+            _REQUIREMENT_CAPABILITIES
+        )
+        if unknown_requirements:
+            raise InferenceResolutionError(
+                "INFERENCE_PROFILE_REQUIREMENT_UNKNOWN"
+            )
         for requirement, capability in _REQUIREMENT_CAPABILITIES.items():
-            if requirements.get(requirement) is True:
-                if capability not in descriptor.capabilities:
-                    raise InferenceResolutionError(
-                        "INFERENCE_PROFILE_CAPABILITY_UNAVAILABLE"
-                    )
+            if requirement not in requirements:
+                continue
+            required = requirements[requirement]
+            if not isinstance(required, bool):
+                raise InferenceResolutionError(
+                    "INFERENCE_PROFILE_INVALID"
+                )
+            if required and capability not in descriptor.capabilities:
+                raise InferenceResolutionError(
+                    "INFERENCE_PROFILE_CAPABILITY_UNAVAILABLE"
+                )
 
         return ResolvedInferencePlan(
             profile_id=profile["id"],
