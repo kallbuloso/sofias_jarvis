@@ -303,3 +303,35 @@ Focused tests added:
 
 Real Anthropic API and same-Conversation provider-rotation smoke are PENDING.
 
+## Anthropic verification hardening — 2026-11-02
+
+After the first real provider-rotation smoke, the OpenAI turn succeeded but the
+Anthropic turn failed closed at conversational intent routing. The owner noted
+that the Anthropic API key is old and may have been revoked.
+
+Hardening added before further inference diagnosis:
+
+- Anthropic now advertises `status_check_support=true`;
+- AI Provider cards expose a `Verificar` action;
+- Anthropic verification uses the authenticated Models API and performs no
+  inference;
+- successful verification records `availability=available` and
+  `last_verified_at`;
+- revoked/invalid key records `availability=auth_required` with
+  `AUTHENTICATION_FAILED`;
+- permission/provider/network failures are normalized separately;
+- a connection that has failed verification is fail-closed for inference even
+  if its local `enabled` flag remains true;
+- the UI shows persisted availability and last verification error;
+- available model count is shown for the live verification result;
+- no secret is returned to the UI or persisted in SQLite.
+
+The current Anthropic documentation confirms `GET /v1/models` as the
+authenticated model-discovery endpoint. The current structured-output syntax
+used by the adapter remains `output_config.format` with
+`type=json_schema`.
+
+Next real diagnostic: run `Verificar` on the existing Anthropic connection.
+If it reports `available`, investigate the classifier request/error
+separately; do not replace the key blindly.
+
