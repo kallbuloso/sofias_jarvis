@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, nextTick, ref } from 'vue'
+import { computed, onMounted, nextTick, ref } from 'vue'
 
 const ready = ref(false)
 const conversations = ref([])
@@ -37,6 +37,38 @@ const integrationConnections = ref([])
 const integrationBusy = ref(false)
 const githubLabel = ref('')
 const githubToken = ref('')
+const anthropicLabel = ref('')
+const anthropicToken = ref('')
+const aiProvider = ref('openai')
+const aiConnectionId = ref('')
+const aiModelPreferences = ref({})
+const aiConnections = computed(() =>
+  integrationConnections.value.filter(item =>
+    item.provider_type === 'ai_inference' &&
+    item.configured && item.enabled
+  )
+)
+const aiProviderItems = computed(() => {
+  const seen = new Set()
+  return aiConnections.value
+    .filter(item => {
+      if (seen.has(item.provider_id)) return false
+      seen.add(item.provider_id)
+      return true
+    })
+    .map(item => ({
+      title: item.provider_name || item.provider_id,
+      value: item.provider_id,
+    }))
+})
+const aiConnectionItems = computed(() =>
+  aiConnections.value
+    .filter(item => item.provider_id === aiProvider.value)
+    .map(item => ({
+      title: item.configuration?.label || item.provider_name || item.id,
+      value: item.id,
+    }))
+)
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
 function inlineParts(value) {
@@ -154,6 +186,7 @@ function handleStream(raw) {
   if (event.type === 'integration_connection') {
     integrationBusy.value = false
     githubToken.value = ''
+    anthropicToken.value = ''
     if (!event.ok) {
       warning.value = 'Falha na conexão: ' + (event.error || 'unknown')
     } else {
@@ -461,6 +494,64 @@ async function openIntegrations() {
   }
 }
 
+async function configureAnthropic() {
+  if (integrationBusy.value || !anthropicToken.value.trim()) return
+  integrationBusy.value = true
+  warning.value = ''
+  const token = anthropicToken.value
+  try {
+    const result = await call(
+      'configureAIConnection', 'anthropic', anthropicLabel.value.trim(), token,
+    )
+    anthropicToken.value = ''
+    if (!result.ok) {
+      integrationBusy.value = false
+      warning.value = 'Configuração Anthropic recusada: ' +
+        (result.error || 'unknown')
+    }
+  } catch {
+    anthropicToken.value = ''
+    integrationBusy.value = false
+    warning.value = 'Não foi possível entregar a credencial Anthropic ao Core.'
+  }
+}
+
+function onAIProviderChanged(providerId) {
+  aiProvider.value = providerId || ''
+  const first = aiConnections.value.find(item => item.provider_id === providerId)
+  aiConnectionId.value = first?.id || ''
+  const saved = aiModelPreferences.value[providerId]
+  model.value = saved || (providerId === 'anthropic' ? 'claude-sonnet-5-5' : '')
+  credentialConfigured.value = Boolean(first)
+}
+
+async function ensureAISelection() {
+  if (!aiProvider.value || !aiConnectionId.value || !model.value.trim()) {
+    warning.value = 'Selecione Provider, conexão e modelo de IA.'
+    return false
+  }
+  try {
+    const result = await call(
+      'selectAIConnection',
+      aiProvider.value, aiConnectionId.value, model.value.trim(),
+    )
+    if (!result.ok) {
+      warning.value = 'Seleção de IA recusada: ' + (result.error || 'unknown')
+      credentialConfigured.value = false
+      return false
+    }
+    aiModelPreferences.value = {
+      ...aiModelPreferences.value,
+      [aiProvider.value]: model.value.trim(),
+    }
+    credentialConfigured.value = true
+    return true
+  } catch {
+    warning.value = 'Não foi possível selecionar o AI Provider.'
+    return false
+  }
+}
+
 async function configureGitHub() {
   if (integrationBusy.value || !githubToken.value.trim()) return
   integrationBusy.value = true
@@ -541,6 +632,7 @@ async function startVoice(event) {
     warning.value = 'Informe o modelo de IA antes de usar voz.'
     return
   }
+  if (!await ensureAISelection()) return
   voiceStarting.value = true
   voiceReleasePending.value = false
   warning.value = ''
@@ -620,6 +712,8 @@ async function sendMessage() {
     return
   }
 
+  if (!legacyMutation && !await ensureAISelection()) return
+
   // Acquire the send lock before awaiting Qt: Ctrl+Enter and click must not
   // create two conversations or dispatch the same message twice.
   busy.value = true
@@ -687,6 +781,10 @@ onMounted(async () => {
     conversations.value = initial.conversations
     model.value = initial.model
     credentialConfigured.value = initial.credentialConfigured
+    aiProvider.value = initial.aiProvider || 'openai'
+    aiConnectionId.value = initial.aiConnectionId || ''
+    integrationConnections.value = initial.aiConnections || []
+    aiModelPreferences.value = initial.aiModelPreferences || {}
     ready.value = true
     if (conversations.value.length) await openConversation(conversations.value[0].id)
     else {
@@ -736,9 +834,28 @@ onMounted(async () => {
               <div class="heading">Conversa</div>
               <div class="small-text">Core Python · AI Provider · SQLite</div>
             </div>
-            <v-text-field v-model="model" class="model-input" label="Modelo de IA"
-              variant="outlined" density="compact" hide-details
-              placeholder="Digite o modelo habilitado"/>
+            <div class="ai-selector">
+              <v-select
+                v-model="aiProvider"
+                :items="aiProviderItems"
+                label="Provider"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :disabled="busy"
+                @update:model-value="onAIProviderChanged"/>
+              <v-select
+                v-model="aiConnectionId"
+                :items="aiConnectionItems"
+                label="Conexão"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :disabled="busy || !aiProvider"/>
+              <v-text-field v-model="model" class="model-input" label="Modelo de IA"
+                variant="outlined" density="compact" hide-details
+                placeholder="Digite o modelo habilitado"/>
+            </div>
           </div>
           <div v-if="!credentialConfigured" class="inline-alert" role="alert">
             Configure sua chave pelo console: main.py --configure-openai-key
@@ -834,6 +951,19 @@ onMounted(async () => {
       <v-card title="Integrações">
         <v-card-text>
           <div class="heading mb-2">AI Providers</div>
+          <div class="integration-section mb-4">
+            <strong>Anthropic</strong>
+            <div class="small-text">
+              API key · armazenada somente no Windows Credential Manager.
+            </div>
+            <v-text-field v-model="anthropicLabel" label="Identificação opcional"
+              variant="outlined" density="compact" class="mt-4"/>
+            <v-text-field v-model="anthropicToken" label="Anthropic API key"
+              type="password" autocomplete="off" variant="outlined" density="compact"/>
+            <v-btn color="primary" :loading="integrationBusy"
+              :disabled="integrationBusy || !anthropicToken.trim()"
+              @click="configureAnthropic">Conectar Anthropic</v-btn>
+          </div>
           <div v-if="!integrationConnections.some(
               item => item.provider_type === 'ai_inference')" class="small-text">
             Nenhum AI Provider configurado.
@@ -1056,6 +1186,7 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
+.ai-selector { display: grid; grid-template-columns: 160px 190px minmax(220px, 1fr); gap: 10px; min-width: 620px; }
 .integration-section { padding: 4px 0; }
 .integration-row { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
 .integration-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
