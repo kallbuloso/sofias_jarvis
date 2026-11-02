@@ -43,6 +43,22 @@ const anthropicToken = ref('')
 const aiProvider = ref('openai')
 const aiConnectionId = ref('')
 const aiModelPreferences = ref({})
+const inferenceProfiles = ref([])
+const conversationProfileId = ref('')
+const resolvedInference = ref(null)
+const inferenceProfileBusy = ref(false)
+const profileName = ref('')
+const profileSlug = ref('')
+const profileCreateBusy = ref(false)
+const inferenceProfileItems = computed(() => [
+  { title: 'Herdar do perfil global', value: '' },
+  ...inferenceProfiles.value
+    .filter(item => item.enabled)
+    .map(item => ({
+      title: item.name + ' · ' + item.providerId + '/' + item.model,
+      value: item.id,
+    })),
+])
 const aiConnections = computed(() =>
   integrationConnections.value.filter(item =>
     item.provider_type === 'ai_inference' &&
@@ -130,6 +146,7 @@ async function openConversation(id, preserveNotices = false) {
       memoryNotice.value = ''
       knowledgeNotice.value = ''
     }
+    await refreshConversationInference(id)
     await scrollToBottom()
   }
 }
@@ -524,6 +541,86 @@ async function confirmMemoryMutation() {
   }
 }
 
+async function refreshInferenceProfiles() {
+  const result = await call('listInferenceProfiles')
+  if (!result.ok) throw new Error(result.error || 'profiles_unavailable')
+  inferenceProfiles.value = result.items || []
+}
+
+async function refreshConversationInference(conversationId) {
+  if (!conversationId) {
+    conversationProfileId.value = ''
+    resolvedInference.value = null
+    return
+  }
+  const result = await call('getConversationInference', conversationId)
+  if (!result.ok) {
+    conversationProfileId.value = ''
+    resolvedInference.value = null
+    throw new Error(result.error || 'inference_resolution_unavailable')
+  }
+  conversationProfileId.value = result.bindingProfileId || ''
+  resolvedInference.value = result.resolved || null
+}
+
+async function onConversationProfileChanged(profileId) {
+  conversationProfileId.value = profileId || ''
+  if (!selected.value || inferenceProfileBusy.value) return
+  inferenceProfileBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call(
+      'setConversationInferenceProfile',
+      selected.value,
+      conversationProfileId.value,
+    )
+    if (!result.ok) {
+      warning.value = 'Não foi possível alterar o perfil da conversa: ' +
+        (result.error || 'unknown')
+      await refreshConversationInference(selected.value)
+      return
+    }
+    conversationProfileId.value = result.bindingProfileId || ''
+    resolvedInference.value = result.resolved || null
+  } catch {
+    warning.value = 'Falha ao alterar o perfil de inferência da conversa.'
+    await refreshConversationInference(selected.value).catch(() => {})
+  } finally {
+    inferenceProfileBusy.value = false
+  }
+}
+
+async function createInferenceProfile() {
+  if (profileCreateBusy.value || !profileName.value.trim() ||
+      !profileSlug.value.trim() || !aiConnectionId.value ||
+      !model.value.trim()) return
+  profileCreateBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call(
+      'createInferenceProfile',
+      profileName.value.trim(),
+      profileSlug.value.trim(),
+      aiConnectionId.value,
+      model.value.trim(),
+    )
+    if (!result.ok) {
+      warning.value = 'Não foi possível criar o perfil: ' +
+        (result.error || 'unknown')
+      return
+    }
+    profileName.value = ''
+    profileSlug.value = ''
+    await refreshInferenceProfiles()
+    integrationNotice.value = 'Perfil de inferência criado: ' +
+      (result.profile?.name || 'novo perfil') + '.'
+  } catch {
+    warning.value = 'Falha ao criar o perfil de inferência.'
+  } finally {
+    profileCreateBusy.value = false
+  }
+}
+
 async function refreshIntegrations() {
   const [providers, connections] = await Promise.all([
     call('listIntegrationProviders'),
@@ -876,11 +973,14 @@ onMounted(async () => {
     aiConnectionId.value = initial.aiConnectionId || ''
     integrationConnections.value = initial.aiConnections || []
     aiModelPreferences.value = initial.aiModelPreferences || {}
+    await refreshInferenceProfiles()
     ready.value = true
     if (conversations.value.length) await openConversation(conversations.value[0].id)
     else {
       selected.value = ''
       messages.value = []
+      conversationProfileId.value = ''
+      resolvedInference.value = null
     }
   } catch {
     warning.value = 'Não foi possível inicializar a interface.'
@@ -924,8 +1024,22 @@ onMounted(async () => {
             <div>
               <div class="heading">Conversa</div>
               <div class="small-text">Core Python · AI Provider · SQLite</div>
+              <div v-if="resolvedInference" class="small-text inference-resolution">
+                Perfil: {{ resolvedInference.profile_slug }} ·
+                origem: {{ resolvedInference.selected_from }} ·
+                {{ resolvedInference.provider_id }}/{{ resolvedInference.model }}
+              </div>
             </div>
             <div class="ai-selector">
+              <v-select
+                v-model="conversationProfileId"
+                :items="inferenceProfileItems"
+                label="Perfil da conversa"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :disabled="busy || inferenceProfileBusy || !selected"
+                @update:model-value="onConversationProfileChanged"/>
               <v-select
                 v-model="aiProvider"
                 :items="aiProviderItems"
@@ -1105,6 +1219,42 @@ onMounted(async () => {
               </div>
             </v-card-text>
           </v-card>
+
+          <v-divider class="my-5"/>
+
+          <div class="heading mb-2">Perfis de inferência</div>
+          <div class="small-text mb-3">
+            Um perfil aponta para uma Connection e um modelo. O perfil global
+            <strong>Geral</strong> é editado pelos seletores do topo; perfis
+            adicionais podem ser vinculados a conversas específicas.
+          </div>
+          <v-card v-for="profile in inferenceProfiles" :key="profile.id"
+            variant="outlined" class="mb-2">
+            <v-card-text>
+              <strong>{{ profile.name }}</strong>
+              <div class="small-text">
+                {{ profile.slug }} · {{ profile.providerId }}/{{ profile.model }}
+                <span v-if="profile.slug === 'general'"> · global</span>
+              </div>
+            </v-card-text>
+          </v-card>
+          <div class="integration-section mt-4">
+            <strong>Novo perfil</strong>
+            <div class="small-text">
+              Usa a Connection e o modelo atualmente selecionados no topo.
+            </div>
+            <div class="profile-create-grid mt-3">
+              <v-text-field v-model="profileName" label="Nome"
+                variant="outlined" density="compact" hide-details/>
+              <v-text-field v-model="profileSlug" label="Slug"
+                placeholder="coding-deep"
+                variant="outlined" density="compact" hide-details/>
+              <v-btn color="primary" :loading="profileCreateBusy"
+                :disabled="profileCreateBusy || !profileName.trim() ||
+                  !profileSlug.trim() || !aiConnectionId || !model.trim()"
+                @click="createInferenceProfile">Criar perfil</v-btn>
+            </div>
+          </div>
 
           <v-divider class="my-5"/>
 
@@ -1301,7 +1451,11 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
-.ai-selector { display: grid; grid-template-columns: 160px 190px minmax(220px, 1fr); gap: 10px; min-width: 620px; }
+.ai-selector { display: grid; grid-template-columns: 210px 145px 175px minmax(190px, 1fr);
+  gap: 10px; min-width: 760px; }
+.inference-resolution { margin-top: 4px; color: #79b9b5; }
+.profile-create-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px;
+  align-items: center; }
 .integration-section { padding: 4px 0; }
 .integration-row { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
 .integration-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
