@@ -105,6 +105,29 @@ class ConnectionStore:
             ).fetchall()
         return [self._decode(row) for row in rows]
 
+    def update_configuration(
+        self, connection_id: str, configuration: dict,
+    ) -> dict:
+        connection_id = self._id(connection_id)
+        if not isinstance(configuration, dict):
+            raise ValueError("invalid_configuration")
+        now = _now()
+        with self._connection() as db:
+            updated = db.execute(
+                """UPDATE integration_connections
+                   SET configuration_json=?,updated_at=?
+                   WHERE id=?""",
+                (
+                    json.dumps(
+                        configuration, ensure_ascii=False, sort_keys=True
+                    ),
+                    now, connection_id,
+                ),
+            )
+        if updated.rowcount != 1:
+            raise KeyError("unknown_connection")
+        return self.get(connection_id)
+
     def record_inspection(
         self, connection_id: str, *,
         display_identity: str | None,
