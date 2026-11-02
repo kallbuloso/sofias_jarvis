@@ -37,7 +37,7 @@ def configure_chat(monkeypatch, tmp_path, *, memory_exists=True):
 
     monkeypatch.setitem(
         sys.modules, "openai",
-        SimpleNamespace(OpenAI=lambda api_key: SimpleNamespace(responses=Responses())),
+        SimpleNamespace(OpenAI=lambda **kwargs: SimpleNamespace(responses=Responses())),
     )
 
     class MemoryClient:
