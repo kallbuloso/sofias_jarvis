@@ -91,6 +91,8 @@ Adicionar armazenamento genérico de segredo de conexão sobre Windows Credentia
 
 ## Increment 1 — Connection Core + GitHub
 
+**Implementation status:** DONE in feature branch; focused tests/build/real Windows GitHub smoke PENDING.
+
 ### Auth
 
 Fine-grained Personal Access Token fornecido pelo proprietário e armazenado no Windows Credential Manager.
@@ -178,3 +180,25 @@ TB-04 poderá ser marcado Product Done quando:
 8. regressão completa e frontend production build passarem.
 
 TB-05 não é autorizado automaticamente pelo fechamento do TB-04.
+
+## Increment 1 implementation checkpoint — 2026-11-02
+
+Implemented:
+
+- SQLite schema v6 with non-secret `integration_connections`;
+- stable UUID connection identity and `credential_ref`;
+- generic per-connection Windows Credential Manager storage;
+- explicit trusted Provider Registry;
+- GitHub provider descriptor;
+- GitHub connection inspection through `GET /user`;
+- normalized connection/auth/provider failure semantics;
+- Connection Manager with Create/Inspect/Enable/Disable/Remove;
+- multi-connection isolation by `connection_id`;
+- asynchronous desktop Configure/Check through QThread;
+- minimal `Integrations` desktop surface;
+- password input is cleared after handoff and stored secrets are never rehydrated into Vue;
+- existing OpenAI and Sofias Memory secret paths remain untouched;
+- focused regression module: `tests/test_connections_tb04.py`.
+
+No GitHub repository/issues tool execution is implemented in this increment.
+
