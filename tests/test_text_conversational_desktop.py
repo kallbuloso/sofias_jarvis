@@ -53,7 +53,10 @@ def environment(monkeypatch, tmp_path, action, *, route_failure=False):
         OpenAI=lambda **kw: SimpleNamespace(responses=Responses()),
     ))
     class MemoryReader:
+        base_url = "https://memory.example"
+
         def __init__(self, url, key):
+            assert url == self.base_url
             assert key == "PRIVATE-TEST-MEMORY"
         def recall(self, **kwargs):
             memory_calls.append(kwargs)
