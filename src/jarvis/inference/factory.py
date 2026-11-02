@@ -22,7 +22,7 @@ def configured_inference_backend(explicit: str | None = None) -> str:
     value = (
         explicit
         if explicit is not None
-        else os.getenv("JARVIS_INFERENCE_BACKEND", "native")
+        else os.getenv("JARVIS_INFERENCE_BACKEND", "litellm")
     )
     if not isinstance(value, str) or value.strip().lower() not in _BACKENDS:
         raise InferenceProviderError("INFERENCE_BACKEND_INVALID")
