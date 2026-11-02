@@ -10,7 +10,7 @@
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | TB-04 Increment 1B: OpenAI como AI Connection real, removendo dependência hardcoded da composição de inferência sem mudar o comportamento funcional |
+| **Próxima atividade** | TB-04 Increment 2: Anthropic como segundo AI Provider real + rotação explícita Provider/Connection/Model na mesma Conversation |
 
 > **Fidelidade:** este documento preserva o roadmap e o histórico de execução. TB-01, TB-02 e TB-03 estão PRODUCT DONE; TB-04 está APPROVED / IN PROGRESS; TB-05 a TB-08 permanecem roadmap sem autorização implícita de implementação. Tecnologias futuras continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
