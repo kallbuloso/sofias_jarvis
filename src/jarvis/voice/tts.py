@@ -16,6 +16,22 @@ class LocalSpeechOutput(QObject):
         super().__init__(parent)
         self._speech = QTextToSpeech(self)
         self._speech.stateChanged.connect(self._on_state)
+        try:
+            locales = list(self._speech.availableLocales())
+            preferred = next(
+                (locale for locale in locales if locale.name().lower() == "pt_br"),
+                None,
+            )
+            if preferred is None:
+                preferred = next(
+                    (locale for locale in locales
+                     if locale.name().lower().startswith("pt_")),
+                    None,
+                )
+            if preferred is not None:
+                self._speech.setLocale(preferred)
+        except Exception:
+            pass
 
     @property
     def available(self) -> bool:
