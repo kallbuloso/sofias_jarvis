@@ -22,6 +22,7 @@ _QUERY_ID = str(uuid4())
 
 
 def environment(monkeypatch, tmp_path, action, *, route_failure=False):
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
     monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(connection, "configured_memory_url",
                         lambda: "https://memory.example")
