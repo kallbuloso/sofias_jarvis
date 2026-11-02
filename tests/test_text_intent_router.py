@@ -1,33 +1,36 @@
-"""Textual intent routing: explicit allowlist, no side effects from a classifier."""
+"""Textual intent routing: explicit allowlist, provider-neutral structured output."""
 from __future__ import annotations
-
-import json
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 
 from jarvis.conversation.intent import TextIntentRouter, validate_intent
 
 
+class FakeStructuredProvider:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def generate_json(self, **kwargs):
+        self.calls.append(kwargs)
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+
 def test_classifier_uses_strict_schema_and_only_current_utterance():
-    requests = []
-
-    class FakeResponses:
-        def create(self, **kwargs):
-            requests.append(kwargs)
-            return SimpleNamespace(output_text=json.dumps({
-                "action": "knowledge_query", "scope": None, "content": None,
-            }))
-
-    result = TextIntentRouter(SimpleNamespace(responses=FakeResponses())).classify(
+    provider = FakeStructuredProvider({
+        "action": "knowledge_query", "scope": None, "content": None,
+    })
+    result = TextIntentRouter(provider).classify(
         model="test-model", utterance="Qual decisão consta no ADR-0001?",
     )
     assert result.action == "knowledge_query"
     assert result.mutates_memory is False
-    assert requests[0]["stream"] is False
-    assert requests[0]["text"]["format"]["type"] == "json_schema"
-    assert requests[0]["input"][-1] == {
+    request = provider.calls[0]
+    assert request["schema_name"] == "jarvis_text_intent"
+    assert request["schema"]["additionalProperties"] is False
+    assert request["messages"][-1] == {
         "role": "user", "content": "Qual decisão consta no ADR-0001?"
     }
 
@@ -59,27 +62,22 @@ def test_schedule_is_not_mutation_and_memory_create_requires_consent():
     assert create.scope == "project:jarvis"
 
 
-def test_classifier_rejects_malformed_json_and_missing_output():
-    for output in ("not-json", "", None):
-        class FakeResponses:
-            def create(self, **kwargs):
-                return SimpleNamespace(output_text=output)
-        with pytest.raises((ValueError, json.JSONDecodeError)):
-            TextIntentRouter(SimpleNamespace(responses=FakeResponses())).classify(
-                model="test", utterance="JARVIS, lembra de amanhã?",
-            )
+@pytest.mark.parametrize("output", [None, "not-a-dict", [], {}])
+def test_classifier_rejects_malformed_provider_output(output):
+    provider = FakeStructuredProvider(output)
+    with pytest.raises((ValueError, TypeError)):
+        TextIntentRouter(provider).classify(
+            model="test", utterance="JARVIS, lembra de amanhã?",
+        )
 
 
 def test_router_never_triggers_tools_or_memory_changes():
-    class FakeResponses:
-        def create(self, **kwargs):
-            assert kwargs["stream"] is False
-            return SimpleNamespace(output_text=json.dumps({
-                "action": "memory_forget", "scope": "global", "content": None,
-            }))
-    intent = TextIntentRouter(SimpleNamespace(responses=FakeResponses())).classify(
+    provider = FakeStructuredProvider({
+        "action": "memory_forget", "scope": "global", "content": None,
+    })
+    intent = TextIntentRouter(provider).classify(
         model="test", utterance="Esqueça minha preferência antiga",
     )
     assert intent.action == "memory_forget"
     assert intent.mutates_memory is True
-    # No client capable of changing memory was ever available to this router.
+    assert len(provider.calls) == 1
