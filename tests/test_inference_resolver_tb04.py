@@ -239,3 +239,38 @@ def test_resolved_plan_is_non_secret_and_preserves_selection_provenance(tmp_path
     assert "credential" not in str(plan).lower()
     assert "api_key" not in str(plan).lower()
     assert "secret" not in str(plan).lower()
+
+def test_explicit_invalid_profile_id_is_normalized_to_domain_error(tmp_path):
+    path = tmp_path / "jarvis.sqlite3"
+    connections, _ = _enabled_openai(path)
+    profiles = InferenceProfileStore(path)
+
+    with pytest.raises(
+        InferenceResolutionError, match="INFERENCE_PROFILE_NOT_FOUND"
+    ):
+        InferenceResolver(profiles, connections).resolve(
+            InferenceResolutionContext(requested_profile_id="not-a-uuid")
+        )
+
+
+def test_unknown_requirement_fails_closed(tmp_path):
+    path = tmp_path / "jarvis.sqlite3"
+    connections, openai = _enabled_openai(path)
+    profiles = InferenceProfileStore(path)
+    profile = profiles.create_profile(
+        "future-capability",
+        "Future capability",
+        connection_id=openai["id"],
+        model="gpt-6-luna",
+        requirements={"tool_calling": True},
+    )
+    profiles.bind(profile["id"], scope_type="global")
+
+    with pytest.raises(
+        InferenceResolutionError,
+        match="INFERENCE_PROFILE_REQUIREMENT_UNKNOWN",
+    ):
+        InferenceResolver(profiles, connections).resolve(
+            InferenceResolutionContext()
+        )
+
