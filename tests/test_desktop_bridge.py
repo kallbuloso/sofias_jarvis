@@ -119,7 +119,7 @@ def test_worker_memory_response_is_provenance_bounded(tmp_path, monkeypatch):
         {"role": "user", "content": "Qual minha cor?"},
         {"role": "assistant", "content": "A cor é teal."},
     ]
-    assert worker.api_key == ""
+    assert worker.credential == ""
 
 
 def test_worker_without_memory_never_accesses_memory_vault(tmp_path, monkeypatch):
@@ -182,7 +182,7 @@ def test_missing_memory_vault_degrades_without_leaking_key(tmp_path, monkeypatch
     worker.done.connect(lambda *args: results.append(args))
     worker.run()
     assert results == [(conversation, "completed", "", "UNAVAILABLE")]
-    assert worker.api_key == ""
+    assert worker.credential == ""
 
 
 
