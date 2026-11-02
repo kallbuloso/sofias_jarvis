@@ -48,7 +48,8 @@ class ReplyWorker(QObject):
                  knowledge_dataset: str | None = None,
                  conversational: bool = False,
                  confirmed_forget=None,
-                 control_answer: str | None = None):
+                 control_answer: str | None = None,
+                 inference_plan=None):
         super().__init__()
         self.conversation_id = conversation_id
         self.prompt = prompt
@@ -61,6 +62,7 @@ class ReplyWorker(QObject):
         self.conversational = conversational
         self.confirmed_forget = confirmed_forget
         self.control_answer = control_answer
+        self.inference_plan = inference_plan
         self.routing_status = "NOT_REQUESTED"
         self.routing_error_code = ""
         self.routing_error_detail = ""
@@ -72,8 +74,19 @@ class ReplyWorker(QObject):
 
     @Slot()
     def run(self) -> None:
-        trace("reply_worker_begin", memory=self.memory_scope is not None,
-              knowledge=self.knowledge_dataset is not None)
+        trace(
+            "reply_worker_begin",
+            memory=self.memory_scope is not None,
+            knowledge=self.knowledge_dataset is not None,
+            inference_profile=(
+                self.inference_plan.profile_slug
+                if self.inference_plan is not None else None
+            ),
+            inference_selected_from=(
+                self.inference_plan.selected_from
+                if self.inference_plan is not None else None
+            ),
+        )
         result = "completed"
         error_code = ""
         memory_provider = None
@@ -1863,6 +1876,7 @@ class JarvisBridge(QObject):
             conversational=conversational,
             confirmed_forget=confirmed_forget,
             control_answer=control_answer,
+            inference_plan=plan,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
