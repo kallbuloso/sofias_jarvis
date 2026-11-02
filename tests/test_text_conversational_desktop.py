@@ -153,7 +153,11 @@ def test_mutating_and_scheduler_intents_are_not_executed(tmp_path, monkeypatch, 
     assert worker.create_proposal is None
     assert worker.direct_create is None
     assert "não" in result["content"].lower() or "Nenhuma" in result["content"]
-    assert memory_calls == knowledge_calls == []
+    assert knowledge_calls == []
+    if action in {"memory_update", "memory_forget"}:
+        assert len(memory_calls) == 1  # read-only target resolution is allowed
+    else:
+        assert memory_calls == []
     assert [x["stream"] for x in calls] == [False]
 
 
@@ -346,3 +350,40 @@ def test_direct_create_disagrees_with_model_scope_never_executes(tmp_path, monke
     )
     assert worker.direct_create is None
     assert not memory_calls and not knowledge_calls
+
+def test_pending_forget_confirmation_is_consumed_before_llm_routing(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(WindowsCredentialStore, "get_openai_key",
+                        lambda self: "PRIVATE-OPENAI")
+    bridge = JarvisBridge()
+    cid = json.loads(bridge.createConversation())["id"]
+    memory_id = str(uuid4())
+    proposal = {
+        "action": "forget",
+        "preview": {
+            "memory_id": memory_id,
+            "scope": "global",
+            "memory_type": "profile",
+            "lifecycle": "active",
+            "content": "Prefiro teal",
+            "source_ref": "memory-operation:test",
+        },
+    }
+    bridge._on_conversational_mutation_proposed(cid, json.dumps(proposal))
+    captured = []
+
+    def dispatch(*args, **kwargs):
+        captured.append((args, kwargs))
+        return json.dumps({"ok": True})
+
+    monkeypatch.setattr(bridge, "_dispatch", dispatch)
+    result = json.loads(bridge.sendConversationalMessage(cid, "Confirmo", "model"))
+    assert result["ok"] is True
+    assert len(captured) == 1
+    assert captured[0][1]["conversational"] is False
+    pending = captured[0][1]["confirmed_forget"]
+    assert pending.action == "forget"
+    assert pending.preview["memory_id"] == memory_id
+    assert bridge._pending_forget_token is None
+    assert bridge._pending_forget_conversation is None
+
