@@ -143,7 +143,7 @@ def test_knowledge_worker_emits_verified_references_without_history_leak(tmp_pat
         {"role": "user", "content": "Por que Modular Monolith?"},
         {"role": "assistant", "content": "Conforme o ADR-0001."},
     ]
-    assert worker.api_key == ""
+    assert worker.credential == ""
 
 
 def test_without_knowledge_worker_never_touches_memory_vault(tmp_path, monkeypatch):
