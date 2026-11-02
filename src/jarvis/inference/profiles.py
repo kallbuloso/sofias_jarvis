@@ -250,6 +250,35 @@ class InferenceProfileStore:
             ).fetchone()
         return self._decode_binding(row) if row else None
 
+    def set_profile_enabled(self, profile_id: str, enabled: bool) -> dict:
+        profile_id = _uuid(profile_id)
+        now = _now()
+        with self._connection() as db:
+            updated = db.execute(
+                "UPDATE inference_profiles SET enabled=?,updated_at=? WHERE id=?",
+                (1 if enabled else 0, now, profile_id),
+            )
+        if updated.rowcount != 1:
+            raise ValueError("inference_profile_not_found")
+        return self.get_profile(profile_id)
+
+    def set_binding_enabled(
+        self, *, scope_type: str, scope_id: str | None = None,
+        enabled: bool,
+    ) -> dict:
+        scope_type, scope_id = _scope(scope_type, scope_id)
+        now = _now()
+        with self._connection() as db:
+            updated = db.execute(
+                """UPDATE inference_bindings
+                   SET enabled=?,updated_at=?
+                   WHERE scope_type=? AND scope_id=?""",
+                (1 if enabled else 0, now, scope_type, scope_id),
+            )
+        if updated.rowcount != 1:
+            raise ValueError("inference_binding_not_found")
+        return self.get_binding(scope_type=scope_type, scope_id=scope_id)
+
     def ensure_general(
         self,
         *,
