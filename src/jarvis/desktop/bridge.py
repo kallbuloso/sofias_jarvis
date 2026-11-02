@@ -543,7 +543,10 @@ class ReplyWorker(QObject):
                     self.delta.emit(self.conversation_id, part)
         except Exception as exc:
             result = "failed"
-            error_code = type(exc).__name__
+            error_code = (
+                getattr(exc, "code", None)
+                or type(exc).__name__
+            )
         finally:
             if memory_provider is not None:
                 memory_status = memory_provider.last_retrieval_status or "NOT_ATTEMPTED"
