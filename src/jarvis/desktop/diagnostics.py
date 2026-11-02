@@ -7,6 +7,7 @@ Diagnostics are disabled by default and cannot affect normal data contracts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ from jarvis.config import data_directory
 
 _LOCK = threading.Lock()
 _QT_HANDLER = None
+_FAULT_FILE = None
 _MARKERS = (
     "QThread: Destroyed while thread is still running",
     "QDxgiVSyncService not destroyed in time",
@@ -61,11 +63,21 @@ def trace(event: str, **flags: str | int | bool | None) -> None:
 
 
 def install_qt_diagnostics() -> None:
-    """Record Qt severities and known lifecycle markers, not raw messages."""
-    global _QT_HANDLER
+    """Record Qt lifecycle markers and native Python fault diagnostics."""
+    global _QT_HANDLER, _FAULT_FILE
     if not diagnostics_enabled() or _QT_HANDLER is not None:
         return
     from PySide6.QtCore import qInstallMessageHandler
+
+    try:
+        fault_path = data_directory() / "desktop-faulthandler.log"
+        fault_path.parent.mkdir(parents=True, exist_ok=True)
+        _FAULT_FILE = fault_path.open("a", encoding="utf-8", buffering=1)
+        faulthandler.enable(file=_FAULT_FILE, all_threads=True)
+        trace("faulthandler_enabled")
+    except (OSError, RuntimeError):
+        _FAULT_FILE = None
+        trace("faulthandler_enable_failed")
 
     def handler(level, context, message):
         try:
