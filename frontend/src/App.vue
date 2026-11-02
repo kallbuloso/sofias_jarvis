@@ -643,7 +643,10 @@ async function openIntegrations() {
   warning.value = ''
   integrationNotice.value = ''
   try {
-    await refreshIntegrations()
+    await Promise.all([
+      refreshIntegrations(),
+      refreshInferenceProfiles(),
+    ])
   } catch {
     warning.value = 'Não foi possível carregar as integrações.'
   }
