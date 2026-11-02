@@ -5,12 +5,12 @@
 | **Projeto** | JARVIS — assistente pessoal universal |
 | **Fase** | 08 — Technical Backlog |
 | **Estado deste documento** | **BASELINE DE PLANEJAMENTO APROVADA** — roadmap inicial TB-01 a TB-08 e plano do TB-01 aprovados pelo proprietário |
-| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01); TB-03 PRODUCT DONE (2026-11-02)** — evidências em `docs/implementation/TB-01-Validation.md`, `TB-02-Validation.md` e `TB-03-Validation.md`; TB-04 a TB-08 permanecem no roadmap |
+| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01); TB-03 PRODUCT DONE (2026-11-02); TB-04 APPROVED / IN PROGRESS** — TB-04 reorientado para AI Providers & Connections após foundation real validada com GitHub |
 | **Data** | 2026-10-30 |
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | TB-04 Increment 1: Connection Core + GitHub real com fine-grained PAT, identidade, disponibilidade e lifecycle local |
+| **Próxima atividade** | TB-04 Increment 1B: OpenAI como AI Connection real, removendo dependência hardcoded da composição de inferência sem mudar o comportamento funcional |
 
 > **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
@@ -624,22 +624,35 @@ Evidência final:
 
 ## 25. TB-04 — Providers e conexões iniciado
 
-TB-04 passa de ROADMAP para **APPROVED / IN PROGRESS** reutilizando SPEC-05, SPEC-06, CONTRACT-01, CONTRACT-07 e ARCH-06 já aprovados.
+TB-04 passa de ROADMAP para **APPROVED / IN PROGRESS** reutilizando SPEC-05, SPEC-06, CONTRACT-01, CONTRACT-04, CONTRACT-07 e ARCH-06 já aprovados.
 
-A pendência `ARCH-R05 / PRD OQ-01` fica resolvida para o MVP com dois domínios externos reais:
+### Foundation validada
 
-- **GitHub**
-- **Google Calendar**
+O primeiro incremento implementou o Connection Manager genérico e o validou com GitHub real:
 
-O Slice separa explicitamente Provider, Connection e Capability; credenciais ficam fora do SQLite; estado de configuração, habilitação, autorização/permissões e disponibilidade permanece dimensional, não um status linear único.
+- focused regression: **39 passed**;
+- frontend build: PASS;
+- fine-grained PAT no Windows Credential Manager: PASS;
+- identidade real GitHub: PASS;
+- configure/check/enable/disable lifecycle: PASS.
 
-Incrementos:
+Esse trabalho permanece no Slice e não será removido.
 
-1. Connection Core + GitHub real via fine-grained PAT.
-2. Google Calendar via OAuth 2.0 Desktop, scopes e reconnect/refresh.
-3. superfície mínima `Integrations & Settings` no desktop para consultar/configurar/check/enable/disable/remove.
+### Correção de prioridade
 
-TB-04 não executa tools de negócio. Consultas reais via capabilities pertencem ao TB-05; efeitos externos pertencem ao TB-06.
+Após essa validação, o proprietário esclareceu que a prioridade de "Providers e conexões" é **rotação de provedores de LLM**, não adicionar mais integrações externas neste momento.
 
-Plano: `docs/implementation/TB-04-Providers-Connections-Plan.md`.
+Portanto:
+
+1. GitHub permanece como prova real da foundation genérica.
+2. Google Calendar fica pausado e fora da execução atual.
+3. O restante do TB-04 passa a implementar **AI Providers & Connections**.
+4. OpenAI será o primeiro AI Provider migrado para o Registry/Connection Manager.
+5. Depois será adicionado um segundo AI Provider real para provar rotação na mesma Conversation.
+6. Fallback automático continua DEFERRED; a primeira rotação será explícita/manual.
+7. `ARCH-R05 / PRD OQ-01` volta a **OPEN** para as duas integrações externas reais do MVP e deverá ser resolvido antes dos Slices TB-05/TB-06 que dependerem delas.
+
+TB-04 não executa tools externas de negócio. Consultas reais pertencem ao TB-05; efeitos externos pertencem ao TB-06.
+
+Plano atualizado: `docs/implementation/TB-04-Providers-Connections-Plan.md`.
 
