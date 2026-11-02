@@ -276,3 +276,30 @@ Owner validated the OpenAI AI Connection refactor on Windows:
 
 The next implementation target is **Increment 2 — Anthropic as the second real AI Provider**, followed by explicit Provider/Connection/Model rotation in the same Conversation.
 
+## Increment 2 implementation checkpoint — 2026-11-02
+
+Implemented in feature branch:
+
+- Anthropic registered as a second `ai_inference` provider;
+- `anthropic>=2,<3` added as runtime dependency;
+- `AnthropicMessagesAdapter` implements CONTRACT-04 streaming and structured JSON capabilities;
+- provider-specific role translation keeps `developer/system` policy outside ordinary conversation messages;
+- unsafe/non-final Anthropic stop reasons are not treated as completed responses;
+- Anthropic API keys use the same per-connection Windows Credential Manager boundary;
+- Anthropic connections are created configured but disabled until explicitly enabled;
+- active AI selection is now `provider_id + connection_id + model`;
+- non-secret selection is persisted in `desktop-ai-selection.json`;
+- per-provider model preferences are preserved;
+- no bootstrap or runtime fallback silently rotates a disabled/missing selected provider to OpenAI;
+- desktop toolbar exposes Provider / Connection / Model;
+- Integrations surface can configure, enable/disable and remove non-legacy Anthropic connections;
+- OpenAI legacy connection remains non-removable in UI during compatibility migration;
+- voice STT remains a separate CONTRACT-05 OpenAI adapter and is not claimed as part of LLM provider rotation.
+
+Focused tests added:
+
+- `tests/test_anthropic_ai_provider_tb04.py`;
+- `tests/test_ai_rotation_desktop_tb04.py`.
+
+Real Anthropic API and same-Conversation provider-rotation smoke are PENDING.
+
