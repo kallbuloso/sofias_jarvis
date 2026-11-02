@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from jarvis.connections.registry import ProviderRegistry
 from jarvis.conversation.store import SQLiteConversationStore, _now
 
 
@@ -146,6 +147,9 @@ class InferenceProfileStore:
             ).fetchone()
             if connection is None:
                 raise ValueError("inference_profile_connection_not_found")
+            descriptor = ProviderRegistry().get(connection["provider_id"])
+            if descriptor is None or descriptor.provider_type != "ai_inference":
+                raise ValueError("inference_profile_requires_ai_connection")
             db.execute(
                 """INSERT INTO inference_profiles(
                     id,slug,name,configuration_json,enabled,created_at,updated_at
