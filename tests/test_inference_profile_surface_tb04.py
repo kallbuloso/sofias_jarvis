@@ -184,3 +184,23 @@ def test_store_unbind_removes_only_requested_scope(bridge_env):
         scope_type="conversation", scope_id=cid,
     ) is None
     assert profiles.get_binding(scope_type="global") is not None
+
+def test_deleting_conversation_removes_its_inference_binding(bridge_env):
+    path, bridge, _, _ = bridge_env
+    cid = json.loads(bridge.createConversation())["id"]
+    profiles = InferenceProfileStore(path / "jarvis.sqlite3")
+    general = profiles.get_by_slug("general")
+    profiles.bind(
+        general["id"],
+        scope_type="conversation",
+        scope_id=cid,
+    )
+
+    deleted = json.loads(bridge.deleteConversation(cid))
+    assert deleted["ok"] is True
+    assert profiles.get_binding(
+        scope_type="conversation",
+        scope_id=cid,
+    ) is None
+    assert profiles.get_binding(scope_type="global") is not None
+
