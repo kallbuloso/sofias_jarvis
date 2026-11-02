@@ -62,6 +62,7 @@ class ReplyWorker(QObject):
         self.confirmed_forget = confirmed_forget
         self.control_answer = control_answer
         self.routing_status = "NOT_REQUESTED"
+        self.routing_error_code = ""
         self.create_proposal: dict | None = None
         self.mutation_proposal: dict | None = None
         self.direct_create = None
@@ -208,8 +209,15 @@ class ReplyWorker(QObject):
                             )
                 except Exception as exc:
                     self.routing_status = "UNAVAILABLE"
-                    trace("conversational_router_unavailable",
-                          error_class=type(exc).__name__)
+                    self.routing_error_code = (
+                        getattr(exc, "code", None)
+                        or type(exc).__name__
+                    )
+                    trace(
+                        "conversational_router_unavailable",
+                        error_class=type(exc).__name__,
+                        error_code=self.routing_error_code,
+                    )
                     # Fail closed for ambiguous intent: do not pass a possible
                     # write request to a generic reply that might claim success.
                     prepared_answer = (
@@ -1071,6 +1079,7 @@ class JarvisBridge(QObject):
             item, _ = self._connection_manager().resolve_ai_connection(
                 provider_id=provider_id,
                 connection_id=connection_id,
+                model_id=model.strip(),
             )
             save_ai_selection(provider_id, connection_id, model.strip())
             if provider_id == "openai":
@@ -1725,6 +1734,7 @@ class JarvisBridge(QObject):
                 self._connection_manager().resolve_ai_connection(
                     provider_id=self._active_ai_provider,
                     connection_id=self._active_ai_connection_id,
+                    model_id=model.strip(),
                 )
             )
         except Exception as exc:
@@ -1901,6 +1911,9 @@ class JarvisBridge(QObject):
             "memoryStatus": memory_status,
             "routingStatus": (
                 self._worker.routing_status if self._worker is not None else "NOT_REQUESTED"
+            ),
+            "routingError": (
+                self._worker.routing_error_code if self._worker is not None else ""
             ),
         }))
 
