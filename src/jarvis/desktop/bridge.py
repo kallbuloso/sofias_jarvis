@@ -882,8 +882,12 @@ class JarvisBridge(QObject):
 
     @Slot()
     def _on_mutation_thread_finished(self) -> None:
-        trace("personal_mutation_thread_finished",
-              in_gui_thread=QThread.currentThread() == self.thread())
+        trace(
+            "personal_mutation_thread_finished",
+            in_gui_thread=QThread.currentThread() == self.thread(),
+            closing=self._closing,
+            bridge_active=self.active,
+        )
         thread = self._mutation_thread
         if thread is None:
             return
@@ -1136,7 +1140,12 @@ class JarvisBridge(QObject):
     @Slot()
     def _on_thread_finished(self) -> None:
         """QThread.finished is delivered to this bridge on its GUI thread."""
-        trace("bridge_thread_finished", in_gui_thread=QThread.currentThread() == self.thread())
+        trace(
+            "bridge_thread_finished",
+            in_gui_thread=QThread.currentThread() == self.thread(),
+            closing=self._closing,
+            bridge_active=self.active,
+        )
         thread = self._thread
         if thread is None:
             return
