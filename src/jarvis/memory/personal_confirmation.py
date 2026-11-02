@@ -7,10 +7,29 @@ Supersede/Forget retain their separate, one-use typed authorization.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import re
 from secrets import token_urlsafe
 from time import monotonic
 from typing import Callable
 from uuid import UUID, uuid4
+
+
+_CONFIRM = re.compile(
+    r"^\s*(?:sim\s*[,.-]?\s*)?(?:confirmo|confirmado|pode\s+esquecer)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_CANCEL = re.compile(
+    r"^\s*(?:n[aã]o\s*[,.-]?\s*)?(?:cancela|cancelar|cancele|n[aã]o\s+confirmo)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_conversational_confirmation(text: str) -> bool:
+    return isinstance(text, str) and _CONFIRM.fullmatch(text) is not None
+
+
+def is_conversational_cancellation(text: str) -> bool:
+    return isinstance(text, str) and _CANCEL.fullmatch(text) is not None
 
 
 @dataclass(frozen=True)
@@ -26,16 +45,36 @@ class PersonalMutationAuthorization:
     @classmethod
     def from_explicit_user_message(
         cls, *, action: str, conversation_id: str, message_id: str,
+        target_memory_id: str | None = None,
     ):
-        """Direct authorization requires proof of a persisted user's request.
-
-        The Core separately validates the exact original content and policy.
-        """
-        if action != "create":
-            raise ValueError("user_direct_intent_create_only")
+        """Direct low-risk authorization bound to the persisted user message."""
+        if action not in {"create", "supersede"}:
+            raise ValueError("user_direct_intent_not_allowed")
+        if action == "create":
+            if target_memory_id is not None:
+                raise ValueError("unexpected_create_target")
+            target = None
+        else:
+            if target_memory_id is None:
+                raise ValueError("direct_update_target_required")
+            target = str(UUID(target_memory_id))
         return cls(
-            str(uuid4()), "create", None, "user_direct_intent",
+            str(uuid4()), action, target, "user_direct_intent",
             str(UUID(conversation_id)), str(UUID(message_id)),
+        )
+
+    @classmethod
+    def from_conversation_confirmation(
+        cls, *, action: str, target_memory_id: str,
+        conversation_id: str, message_id: str,
+    ):
+        """Confirmation reply bound to one already-resolved pending operation."""
+        if action != "forget":
+            raise ValueError("conversation_confirmation_forget_only")
+        return cls(
+            str(uuid4()), "forget", str(UUID(target_memory_id)),
+            "conversation_confirmed", str(UUID(conversation_id)),
+            str(UUID(message_id)),
         )
 
     @classmethod
@@ -176,6 +215,18 @@ class PersonalMutationGate:
             target_memory_id=target,
         )
         return replace(pending, authorization=consent)
+
+    def take(self, token: str, conversation_id: str) -> PendingPersonalMutation:
+        """Consume a pending conversational mutation without inventing consent."""
+        pending, expected = self._pending, self._token
+        self.clear()
+        if pending is None or not isinstance(token, str) or token != expected:
+            raise ValueError("authorization_missing_or_invalid")
+        if self._now() > pending.expires_at:
+            raise ValueError("authorization_expired")
+        if str(UUID(conversation_id)) != pending.conversation_id:
+            raise ValueError("authorization_wrong_conversation")
+        return pending
 
 
 @dataclass(frozen=True)
