@@ -35,6 +35,7 @@ const integrationsDialog = ref(false)
 const integrationProviders = ref([])
 const integrationConnections = ref([])
 const integrationBusy = ref(false)
+const integrationNotice = ref('')
 const githubLabel = ref('')
 const githubToken = ref('')
 const anthropicLabel = ref('')
@@ -189,8 +190,24 @@ function handleStream(raw) {
     anthropicToken.value = ''
     if (!event.ok) {
       warning.value = 'Falha na conexão: ' + (event.error || 'unknown')
+      integrationNotice.value = ''
     } else {
       warning.value = ''
+      const connection = event.connection
+      if (event.action === 'verify_ai' && connection) {
+        const count = Array.isArray(connection.available_models)
+          ? connection.available_models.length : 0
+        integrationNotice.value = connection.availability === 'available'
+          ? 'Credencial válida. Provider disponível' +
+            (count ? ' · ' + count + ' modelos acessíveis.' : '.')
+          : 'Verificação concluída: ' + connection.availability +
+            (connection.last_error_code
+              ? ' · ' + connection.last_error_code : '')
+        if (connection.id === aiConnectionId.value &&
+            connection.availability !== 'available') {
+          credentialConfigured.value = false
+        }
+      }
     }
     refreshIntegrations().catch(() => {})
     return
@@ -574,6 +591,25 @@ async function configureGitHub() {
   }
 }
 
+async function checkAIConnection(connection) {
+  if (integrationBusy.value || !connection?.id) return
+  integrationBusy.value = true
+  warning.value = ''
+  integrationNotice.value = 'Verificando credencial e acesso ao provider…'
+  try {
+    const result = await call('checkAIConnection', connection.id)
+    if (!result.ok) {
+      integrationBusy.value = false
+      integrationNotice.value = ''
+      warning.value = 'Verificação recusada: ' + (result.error || 'unknown')
+    }
+  } catch {
+    integrationBusy.value = false
+    integrationNotice.value = ''
+    warning.value = 'Não foi possível verificar o AI Provider.'
+  }
+}
+
 async function checkIntegration(connectionId) {
   if (integrationBusy.value) return
   integrationBusy.value = true
@@ -951,6 +987,9 @@ onMounted(async () => {
       <v-card title="Integrações">
         <v-card-text>
           <div class="heading mb-2">AI Providers</div>
+          <div v-if="integrationNotice" class="small-text mb-3">
+            {{ integrationNotice }}
+          </div>
           <div class="integration-section mb-4">
             <strong>Anthropic</strong>
             <div class="small-text">
@@ -978,10 +1017,17 @@ onMounted(async () => {
                   <div>{{ connection.configuration?.label || 'Conexão de inferência' }}</div>
                   <div class="small-text">
                     configurada: {{ connection.configured ? 'sim' : 'não' }} ·
-                    habilitada: {{ connection.enabled ? 'sim' : 'não' }}
+                    habilitada: {{ connection.enabled ? 'sim' : 'não' }} ·
+                    disponibilidade: {{ connection.availability }}
+                  </div>
+                  <div v-if="connection.last_error_code" class="small-text">
+                    último erro: {{ connection.last_error_code }}
                   </div>
                 </div>
                 <div class="integration-actions">
+                  <v-btn v-if="connection.status_check_support"
+                    size="small" variant="text" :disabled="integrationBusy"
+                    @click="checkAIConnection(connection)">Verificar</v-btn>
                   <v-btn size="small" variant="text" :disabled="integrationBusy"
                     @click="toggleIntegration(connection)">
                     {{ connection.enabled ? 'Desabilitar' : 'Habilitar' }}
