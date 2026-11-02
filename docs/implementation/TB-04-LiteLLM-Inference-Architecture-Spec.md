@@ -1225,3 +1225,52 @@ Resolver properties:
 The ReplyWorker/CLI still use the pre-D3 explicit connection/model path.
 Resolver integration is a separate gate after focused/full regression.
 
+## 33. TB-04D4/D6 runtime integration checkpoint — 2026-11-02
+
+The deterministic resolver is now connected to both desktop and CLI inference.
+
+Runtime flow:
+
+```text
+Conversation context
+→ InferenceResolver
+→ ResolvedInferencePlan
+→ ConnectionManager
+→ exact credential
+→ CONTRACT-04
+→ LiteLLM
+```
+
+Desktop behavior:
+
+- the current Provider / Connection / Model selector now edits the canonical
+  global `general` profile;
+- `general` is authoritative after migration;
+- `desktop-ai-selection.json` and the legacy OpenAI model preference are
+  compatibility/UI mirrors, not inference authority;
+- desktop bootstrap adopts the canonical `general` primary when it exists;
+- a Conversation binding can override `general` without mutating it;
+- ReplyWorker receives the resolved model/provider/connection plus profile
+  provenance;
+- a first-run/pre-bootstrap compatibility path may seed `general`, but only
+  when no inference profile is configured.
+
+CLI behavior:
+
+- first use may seed `general` from the existing OpenAI connection and the
+  explicit legacy model option;
+- subsequent inference resolves through the same
+  `InferenceResolutionContext → ResolvedInferencePlan` path as desktop;
+- the CLI no longer hardcodes OpenAI as the executable provider once a profile
+  is present.
+
+Security/policy invariants:
+
+- InferenceResolver still does not read credentials;
+- credential lookup happens only after a valid plan exists;
+- no secret is persisted in profiles or plans;
+- no automatic fallback;
+- no LiteLLM Auto Router;
+- no Agent/Task domain object is synthesized by this increment;
+- disabled or invalid selected policy fails closed.
+
