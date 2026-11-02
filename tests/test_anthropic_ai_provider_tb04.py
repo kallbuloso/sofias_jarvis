@@ -243,7 +243,9 @@ def test_inference_factory_builds_anthropic_adapter(monkeypatch):
             self.messages = object()
 
     monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=Client))
-    provider = build_inference_provider("anthropic", "PRIVATE")
+    provider = build_inference_provider(
+        "anthropic", "PRIVATE", backend="native",
+    )
     assert isinstance(provider, AnthropicMessagesAdapter)
     assert created == [{"api_key": "PRIVATE", "timeout": 30.0}]
 
