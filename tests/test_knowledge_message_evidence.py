@@ -146,6 +146,8 @@ def test_existing_v4_database_migrates_without_changing_history(tmp_path):
     db.append_assistant_delta(mid, "Texto antes da migração")
     db.end_assistant_message(mid, successful=True)
     with sqlite3.connect(path) as raw:
+        raw.execute("DROP TABLE inference_bindings")
+        raw.execute("DROP TABLE inference_profiles")
         raw.execute("DROP TABLE integration_connections")
         raw.execute("DROP TABLE message_knowledge_evidence")
         raw.execute("PRAGMA user_version = 4")
@@ -153,7 +155,7 @@ def test_existing_v4_database_migrates_without_changing_history(tmp_path):
     assert reopened.list_messages(cid)[0]["content"] == "Texto antes da migração"
     assert "knowledgeEvidence" not in reopened.list_messages(cid)[0]
     with sqlite3.connect(path) as raw:
-        assert raw.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == 7
     reopened.save_knowledge_evidence(mid, dataset=DATASET,
         knowledge_status="NO_RESULTS", query_id=None, references=[])
 
