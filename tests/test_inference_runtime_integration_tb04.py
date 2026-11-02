@@ -15,6 +15,7 @@ from jarvis.secrets.windows import WindowsCredentialStore
 
 def _vault(monkeypatch):
     secrets = {}
+    monkeypatch.setenv("JARVIS_MODEL", "gpt-6-luna")
     monkeypatch.setattr(
         WindowsCredentialStore, "get_openai_key",
         lambda self: "OPENAI-PRIVATE",
@@ -215,3 +216,34 @@ def test_dispatch_worker_receives_resolved_plan_not_ui_model(
     assert captured["inference_plan"].profile_slug == "general"
     assert captured["inference_plan"].selected_from == "global"
     assert captured["credential"] == "OPENAI-PRIVATE"
+
+def test_bootstrap_prefers_canonical_general_over_stale_desktop_preference(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    _vault(monkeypatch)
+
+    bridge = JarvisBridge()
+    first = json.loads(bridge.bootstrap())
+    assert first["aiProvider"] == "openai"
+
+    _, anthropic = _verified_anthropic(
+        tmp_path / "jarvis.sqlite3", monkeypatch,
+    )
+    profiles = InferenceProfileStore(tmp_path / "jarvis.sqlite3")
+    general = profiles.get_by_slug("general")
+    profiles.update_primary(
+        general["id"],
+        connection_id=anthropic["id"],
+        model="claude-sonnet-5-5",
+    )
+
+    # Do not update desktop-ai-selection.json: this simulates a stale legacy
+    # preference file after the profile became canonical.
+    restarted = JarvisBridge()
+    boot = json.loads(restarted.bootstrap())
+
+    assert boot["aiProvider"] == "anthropic"
+    assert boot["aiConnectionId"] == anthropic["id"]
+    assert boot["model"] == "claude-sonnet-5-5"
+
