@@ -146,7 +146,11 @@ async function openConversation(id, preserveNotices = false) {
       memoryNotice.value = ''
       knowledgeNotice.value = ''
     }
-    await refreshConversationInference(id)
+    try {
+      await refreshConversationInference(id)
+    } catch {
+      warning.value = 'Não foi possível resolver o perfil de inferência desta conversa.'
+    }
     await scrollToBottom()
   }
 }
@@ -714,6 +718,10 @@ async function ensureAISelection() {
       [aiProvider.value]: model.value.trim(),
     }
     credentialConfigured.value = true
+    await refreshInferenceProfiles()
+    if (selected.value) {
+      await refreshConversationInference(selected.value).catch(() => {})
+    }
     return true
   } catch {
     warning.value = 'Não foi possível selecionar o AI Provider.'
