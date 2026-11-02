@@ -7,24 +7,23 @@
 
 ## Objective
 
-Entregar um Connection Manager utilizável no desktop para registrar adapters confiáveis, configurar conexões reais, preservar credenciais de forma protegida, verificar identidade/permissões/disponibilidade e habilitar/desabilitar/remover conexões sem conceder autoridade operacional implícita.
+Entregar uma arquitetura utilizável de **AI Providers & Connections** para que o JARVIS possa trocar explicitamente de provedor/modelo de inferência sem alterar Conversation, Memory, Knowledge, Voice ou autoridade do Core.
 
-TB-04 não executa tools de negócio. As primeiras consultas reais via capabilities ficam no TB-05; efeitos externos permanecem no TB-06.
+O Connection Manager genérico continua válido e o GitHub permanece como prova real já implementada do lifecycle de conexões externas, mas deixa de ser a direção principal do TB-04.
 
-## Resolução de ARCH-R05 / PRD OQ-01
+TB-04 não executa tools de negócio. Consultas externas ficam no TB-05; efeitos externos permanecem no TB-06.
 
-Os dois domínios externos reais do MVP serão:
+## Correção de escopo — 2026-11-02
 
-1. **GitHub**
-2. **Google Calendar**
+A implementação inicial interpretou "Providers e conexões" prioritariamente como integrações externas. Após validação do GitHub, o proprietário esclareceu que o valor prioritário esperado é **rotacionar providers de LLM**.
 
-Motivos:
-- são domínios funcionalmente distintos;
-- ambos têm identidade de conta real e permissões verificáveis;
-- GitHub fornece um primeiro caminho simples com fine-grained PAT;
-- Google Calendar exercita OAuth 2.0 Desktop, scopes e refresh/reconnect;
-- ambos servem naturalmente ao TB-05 para READ;
-- Calendar oferece depois um WRITE reversível e verificável para o TB-06.
+Decisão revisada:
+
+- manter GitHub como foundation validada do Connection Manager;
+- **não implementar Google Calendar neste momento**;
+- reorientar o restante do TB-04 para AI Providers;
+- `ARCH-R05 / PRD OQ-01` volta a **OPEN** para escolha futura dos dois domínios externos do MVP, a ser fechada antes dos Slices realmente dependentes (TB-05/TB-06);
+- fallback automático de provider continua DEFERRED; o TB-04 entrega seleção/rotação explícita.
 
 ## Invariantes do Slice
 
@@ -59,7 +58,7 @@ Descriptor mínimo:
 - `reconnect_support`
 - `provider_revoke_support`
 
-TB-04 registra GitHub e Google Calendar. Não fará retrofit obrigatório de OpenAI, Voice ou Sofias Memory para o novo Registry; isso só ocorrerá quando trouxer valor real e sem regressão.
+TB-04 registra GitHub como integração externa já validada e passa a registrar **OpenAI como primeiro AI Provider real**. O retrofit de OpenAI é agora parte deliberada do Slice; Voice e Sofias Memory não serão migrados para o Registry sem necessidade concreta.
 
 ### Connection Store
 
@@ -91,7 +90,7 @@ Adicionar armazenamento genérico de segredo de conexão sobre Windows Credentia
 
 ## Increment 1 — Connection Core + GitHub
 
-**Implementation status:** DONE in feature branch; focused tests/build/real Windows GitHub smoke PENDING.
+**Implementation status:** DONE and owner-validated on Windows. Focused suite: 39 passed; frontend build PASS; real GitHub connection lifecycle PASS.
 
 ### Auth
 
@@ -114,31 +113,50 @@ Fine-grained Personal Access Token fornecido pelo proprietário e armazenado no 
 - duas conexões GitHub, se criadas, permanecem isoladas;
 - nenhuma capability de negócio é executada por TB-04.
 
-## Increment 2 — Google Calendar OAuth Desktop
+## Increment 1B — OpenAI como AI Connection real
 
-### Auth
-
-OAuth 2.0 para aplicativo Desktop/installed application.
-
-Persistência:
-- client configuration não secreta conforme necessidade;
-- refresh token no Windows Credential Manager;
-- access token efêmero/renovável;
-- granted scopes observados registrados sem segredo.
+**Goal:** manter o comportamento atual do JARVIS, mas remover OpenAI hardcoded da composição do runtime.
 
 ### Flow
 
-`Create Connection → BeginExternalAuthorization → browser consent → correlated callback → token exchange → secure persist → Inspect → Enable`
+`Conversation → Inference Runtime → AI Provider Registry → OpenAI Connection → OpenAI Adapter`
 
 ### Acceptance
 
-- retorno OAuth só conclui a conexão pendente correta;
-- callback inesperado/repetido/expirado não ativa conexão;
-- granted scopes são preservados como observação;
-- refresh/reconnect não troca silenciosamente de identidade;
-- falha de refresh não declara conexão pronta;
-- conexão Calendar pode ser desabilitada/removida sem apagar eventos externos;
-- segredo não aparece na UI/log/SQLite.
+- OpenAI aparece como `provider_type=ai_inference`;
+- credencial atual é migrada internamente para uma connection sem exposição ou nova digitação;
+- runtime recebe `provider_id + connection_id + model_id`;
+- Conversation continua usando o mesmo histórico/contexto;
+- intent classification usa a mesma AI Connection selecionada, sem chamada OpenAI escondida fora do adapter;
+- Memory/Knowledge continuam envolvendo o provider selecionado sem conhecer sua implementação;
+- comportamento existente de OpenAI permanece funcional;
+- conexão desabilitada não pode iniciar nova inferência;
+- seleção default persiste sem armazenar secret.
+
+## Increment 2 — Segundo AI Provider real
+
+Adicionar um segundo provider somente depois que OpenAI estiver totalmente atrás do CONTRACT-04/Connection Manager.
+
+A escolha entre Anthropic, Gemini ou outro provider será feita contra as APIs atuais e deverá provar que o contrato é realmente provider-neutral.
+
+Acceptance central:
+
+`mesma Conversation → turno com provider A → troca explícita → turno com provider B`
+
+Sem perda de histórico, Memory, Knowledge ou autoridade.
+
+## Increment 3 — AI Provider / Connection / Model selector
+
+Superfície simples no desktop:
+
+- Provider;
+- Connection;
+- Model;
+- seleção default persistida;
+- disponibilidade/capabilities observadas;
+- troca manual explícita.
+
+Sem fallback automático, cost router, load balancing ou seleção autônoma pelo LLM.
 
 ## Desktop — Integrations & Settings
 
@@ -155,7 +173,7 @@ A UI transmite comandos. O Core valida e mantém o estado canônico.
 
 ## Out of Scope
 
-- execução de GitHub/Calendar tools na conversa — TB-05;
+- execução de GitHub/Calendar ou outras tools externas na conversa — TB-05;
 - CREATE/UPDATE/DELETE externo — TB-06;
 - provider marketplace;
 - plugin download/dynamic loading;
@@ -170,14 +188,14 @@ A UI transmite comandos. O Core valida e mantém o estado canônico.
 
 TB-04 poderá ser marcado Product Done quando:
 
-1. GitHub connection lifecycle real passar no Windows;
-2. Google Calendar OAuth connection lifecycle real passar no Windows;
-3. secrets permanecerem fora de SQLite/UI/log;
-4. restart preservar estado não secreto;
-5. disable/remove funcionarem com semântica correta;
-6. serviço/credencial inválida degradar somente a conexão afetada;
-7. focused tests passarem;
-8. regressão completa e frontend production build passarem.
+1. foundation do Connection Manager continuar validada com GitHub real;
+2. OpenAI operar integralmente como AI Connection selecionável;
+3. um segundo AI Provider real operar na mesma Conversation;
+4. troca manual Provider/Connection/Model preservar Conversation, Memory e Knowledge;
+5. secrets permanecerem fora de SQLite/UI/log;
+6. conexão AI desabilitada impedir nova inferência dependente;
+7. restart preservar seleção e estado não secreto;
+8. focused tests, regressão completa e frontend production build passarem.
 
 TB-05 não é autorizado automaticamente pelo fechamento do TB-04.
 
@@ -201,4 +219,16 @@ Implemented:
 - focused regression module: `tests/test_connections_tb04.py`.
 
 No GitHub repository/issues tool execution is implemented in this increment.
+
+## Direction checkpoint — 2026-11-02
+
+Owner validated the Connection Manager foundation:
+
+- focused regression: **39 passed**;
+- frontend build: PASS;
+- real GitHub fine-grained PAT connection: PASS;
+- identity `kallbuloso` observed correctly;
+- connection reported configured and available.
+
+This proves the generic connection lifecycle. Work now continues with **Increment 1B — OpenAI as an AI Connection**; Google Calendar is intentionally paused.
 
