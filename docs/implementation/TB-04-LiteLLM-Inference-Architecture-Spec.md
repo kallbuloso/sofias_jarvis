@@ -1180,3 +1180,48 @@ Implemented in this checkpoint:
 
 Focused regression is required before proceeding to resolver integration.
 
+## 32. TB-04D3 implementation checkpoint — 2026-11-02
+
+Deterministic policy resolution has been implemented without changing the
+active inference execution path.
+
+New domain objects:
+
+- `InferenceResolutionContext`;
+- `ResolvedInferencePlan`;
+- `InferenceResolver`;
+- `InferenceResolutionError`.
+
+Resolution precedence is now implemented exactly as:
+
+```text
+explicit request profile
+→ task
+→ agent
+→ conversation
+→ project
+→ global
+```
+
+Resolver properties:
+
+- no provider credential access;
+- no LiteLLM/SDK construction;
+- no inference execution;
+- no automatic fallback;
+- disabled bindings are ignored and resolution continues to the next scope;
+- an enabled more-specific binding that targets a disabled/invalid profile or
+  unavailable Connection fails closed instead of silently falling back;
+- plan provenance records the winning scope and scope identity;
+- resolved plan contains provider_id, connection_id, model, requirements and
+  constraints, but no secret;
+- Anthropic verified-model metadata is honored;
+- current capability admission is strict for:
+  - streaming;
+  - structured_output;
+- unknown requirements fail closed until the capability vocabulary is
+  deliberately expanded.
+
+The ReplyWorker/CLI still use the pre-D3 explicit connection/model path.
+Resolver integration is a separate gate after focused/full regression.
+
