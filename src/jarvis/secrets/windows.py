@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from uuid import UUID
 
 
 class SecureStorageUnavailable(RuntimeError):
@@ -49,3 +50,33 @@ class WindowsCredentialStore:
 
     def delete_memory_key(self) -> None:
         self._vault().delete_password(self.MEMORY_SERVICE, self.ACCOUNT)
+
+    @staticmethod
+    def connection_service(connection_id: str) -> str:
+        connection_id = str(UUID(connection_id))
+        return f"sofias-jarvis/connection/{connection_id}"
+
+    def get_connection_secret(self, connection_id: str) -> str | None:
+        return self._vault().get_password(
+            self.connection_service(connection_id), self.ACCOUNT,
+        )
+
+    def set_connection_secret(self, connection_id: str, secret: str) -> None:
+        if not isinstance(secret, str) or not secret.strip():
+            raise ValueError("connection secret cannot be empty")
+        self._vault().set_password(
+            self.connection_service(connection_id), self.ACCOUNT, secret.strip(),
+        )
+
+    def delete_connection_secret(self, connection_id: str) -> None:
+        vault = self._vault()
+        service = self.connection_service(connection_id)
+        try:
+            vault.delete_password(service, self.ACCOUNT)
+        except Exception as exc:
+            # Deleting an already-missing credential is idempotent, but any
+            # other vault failure must remain visible to the caller.
+            if (type(exc).__name__ == "PasswordDeleteError"
+                    and type(exc).__module__.startswith("keyring")):
+                return
+            raise
