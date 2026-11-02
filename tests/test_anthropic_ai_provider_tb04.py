@@ -187,3 +187,30 @@ def test_inference_factory_builds_anthropic_adapter(monkeypatch):
     provider = build_inference_provider("anthropic", "PRIVATE")
     assert isinstance(provider, AnthropicMessagesAdapter)
     assert created == [{"api_key": "PRIVATE", "timeout": 30.0}]
+
+def test_anthropic_sdk_error_codes_are_normalized_without_exposing_message():
+    class BillingError(Exception):
+        status_code = 402
+        body = {"error": {"type": "billing_error"}}
+
+    class BillingMessages:
+        def create(self, **kwargs):
+            raise BillingError("credit balance is too low")
+
+    adapter = AnthropicMessagesAdapter(
+        SimpleNamespace(messages=BillingMessages())
+    )
+    with pytest.raises(AnthropicProviderResponseError) as captured:
+        adapter.generate_json(
+            model="claude-sonnet-5-5",
+            messages=[{"role": "user", "content": "Oi"}],
+            schema_name="x",
+            schema={
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": False,
+            },
+        )
+    assert captured.value.code == "BILLING_UNAVAILABLE"
+
