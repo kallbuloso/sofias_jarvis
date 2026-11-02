@@ -117,6 +117,10 @@ class ConnectionManager:
             raise ValueError("AI_CONNECTION_AMBIGUOUS")
 
         item = candidates[0]
+        if item["availability"] in {
+            "auth_required", "permission_insufficient", "unavailable", "error",
+        }:
+            raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
         secret = self._secret_for(item)
         if not secret:
             raise ValueError("AI_CREDENTIAL_NOT_CONFIGURED")
