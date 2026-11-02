@@ -358,3 +358,36 @@ Fix:
 This keeps CONTRACT-04 provider-neutral while containing Anthropic-specific
 schema quirks inside the adapter boundary.
 
+## TB-04C — LiteLLM transition implementation checkpoint — 2026-11-02
+
+Implementation started after owner approval of
+`TB-04-LiteLLM-Inference-Architecture-Spec.md`.
+
+Implemented:
+
+- `litellm-core>=1.106.6,<2` added as the in-process provider-compatibility SDK;
+- Provider Registry now exposes `transport` and `litellm_prefix` metadata;
+- OpenAI → `openai/`;
+- Anthropic → `anthropic/`;
+- new `LiteLLMInferenceAdapter` implements the current CONTRACT-04 subset:
+  - streaming text;
+  - structured JSON;
+  - provider-qualified model names;
+  - explicit per-request credential passing;
+  - normalized provider failures;
+- Anthropic nullable-enum schema compatibility remains inside the single
+  provider-compatibility adapter, not the Core;
+- inference factory supports two explicit backends:
+  - `native` — existing validated OpenAI/Anthropic adapters;
+  - `litellm` — candidate LiteLLM path;
+- runtime switch: `JARVIS_INFERENCE_BACKEND=native|litellm`;
+- default remains `native` until owner-validated parity;
+- no automatic fallback, Router, InferenceProfile or third provider has been
+  enabled yet;
+- focused tests added in `tests/test_litellm_inference_tb04.py`.
+
+The current LiteLLM SDK documentation states that provider credentials can be
+passed per call and model identifiers use `provider/model`. The SDK is not
+thread-safe for process-global settings, therefore JARVIS does not use global
+LiteLLM API-key state for connection routing.
+
