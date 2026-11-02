@@ -159,3 +159,48 @@ def test_ai_provider_ui_exposes_verify_and_availability():
     assert "@click=\"checkAIConnection(connection)\">Verificar</v-btn>" in source
     assert "disponibilidade: {{ connection.availability }}" in source
     assert "último erro: {{ connection.last_error_code }}" in source
+
+def test_verified_models_are_persisted_and_unknown_model_is_rejected(tmp_path):
+    store = ConnectionStore(tmp_path / "jarvis.sqlite3")
+    vault = FakeVault()
+    manager = ConnectionManager(store, vault)
+    manager._ai_verifiers["anthropic"] = ValidVerifier()
+
+    item = manager.create_ai("anthropic", "ANTHROPIC-PRIVATE")
+    manager.set_enabled(item["id"], True)
+    checked = manager.verify_ai(item["id"])
+
+    assert checked["configuration"]["observed_models"] == [
+        "claude-sonnet-5-5"
+    ]
+
+    resolved, _ = manager.resolve_ai_connection(
+        provider_id="anthropic",
+        connection_id=item["id"],
+        model_id="claude-sonnet-5-5",
+    )
+    assert resolved["id"] == item["id"]
+
+    with pytest.raises(ValueError, match="AI_MODEL_NOT_AVAILABLE"):
+        manager.resolve_ai_connection(
+            provider_id="anthropic",
+            connection_id=item["id"],
+            model_id="claude-not-accessible",
+        )
+
+
+def test_unverified_status_check_provider_is_not_used_for_inference(tmp_path):
+    store = ConnectionStore(tmp_path / "jarvis.sqlite3")
+    vault = FakeVault()
+    manager = ConnectionManager(store, vault)
+
+    item = manager.create_ai("anthropic", "ANTHROPIC-PRIVATE")
+    manager.set_enabled(item["id"], True)
+
+    with pytest.raises(ValueError, match="AI_CONNECTION_NOT_VERIFIED"):
+        manager.resolve_ai_connection(
+            provider_id="anthropic",
+            connection_id=item["id"],
+            model_id="claude-sonnet-5-5",
+        )
+
