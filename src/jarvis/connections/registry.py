@@ -43,6 +43,23 @@ OPENAI = ProviderDescriptor(
 )
 
 
+ANTHROPIC = ProviderDescriptor(
+    provider_id="anthropic",
+    display_name="Anthropic",
+    provider_type="ai_inference",
+    contract_versions=("inference-v1", "connection-v1"),
+    capabilities=(
+        "inference.text.streaming",
+        "inference.structured_json",
+    ),
+    supported_auth_methods=("api_key",),
+    multi_connection_support=True,
+    status_check_support=False,
+    reconnect_support=True,
+    provider_revoke_support=False,
+)
+
+
 GITHUB = ProviderDescriptor(
     provider_id="github",
     display_name="GitHub",
@@ -65,6 +82,7 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._providers = {
             OPENAI.provider_id: OPENAI,
+            ANTHROPIC.provider_id: ANTHROPIC,
             GITHUB.provider_id: GITHUB,
         }
 
