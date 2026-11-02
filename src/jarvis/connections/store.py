@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -14,11 +15,19 @@ class ConnectionStore:
         self.path = Path(path).expanduser().resolve()
         SQLiteConversationStore(self.path)  # Owns schema migration/version.
 
-    def _connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connection(self):
         db = sqlite3.connect(str(self.path), timeout=10.0)
         db.row_factory = sqlite3.Row
-        db.execute("PRAGMA busy_timeout = 10000")
-        return db
+        try:
+            db.execute("PRAGMA busy_timeout = 10000")
+            yield db
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     @staticmethod
     def _id(value: str) -> str:
@@ -46,44 +55,34 @@ class ConnectionStore:
         now = _now()
         credential_ref = f"wincred:{connection_id}"
         with self._connection() as db:
-            try:
-                db.execute(
-                    """INSERT INTO integration_connections(
-                        id,provider_id,credential_ref,configuration_json,
-                        created_at,updated_at
-                    ) VALUES (?,?,?,?,?,?)""",
-                    (
-                        connection_id, provider_id.strip(), credential_ref,
-                        json.dumps(configuration, ensure_ascii=False, sort_keys=True),
-                        now, now,
-                    ),
-                )
-                db.commit()
-            finally:
-                db.close()
+            db.execute(
+                """INSERT INTO integration_connections(
+                    id,provider_id,credential_ref,configuration_json,
+                    created_at,updated_at
+                ) VALUES (?,?,?,?,?,?)""",
+                (
+                    connection_id, provider_id.strip(), credential_ref,
+                    json.dumps(configuration, ensure_ascii=False, sort_keys=True),
+                    now, now,
+                ),
+            )
         return self.get(connection_id)
 
     def get(self, connection_id: str) -> dict | None:
         connection_id = self._id(connection_id)
         with self._connection() as db:
-            try:
-                row = db.execute(
-                    "SELECT * FROM integration_connections WHERE id=?",
-                    (connection_id,),
-                ).fetchone()
-            finally:
-                db.close()
+            row = db.execute(
+                "SELECT * FROM integration_connections WHERE id=?",
+                (connection_id,),
+            ).fetchone()
         return self._decode(row) if row else None
 
     def list(self) -> list[dict]:
         with self._connection() as db:
-            try:
-                rows = db.execute(
-                    "SELECT * FROM integration_connections "
-                    "ORDER BY provider_id,created_at,id"
-                ).fetchall()
-            finally:
-                db.close()
+            rows = db.execute(
+                "SELECT * FROM integration_connections "
+                "ORDER BY provider_id,created_at,id"
+            ).fetchall()
         return [self._decode(row) for row in rows]
 
     def record_inspection(
@@ -105,22 +104,18 @@ class ConnectionStore:
             raise ValueError("invalid_permissions")
         now = _now()
         with self._connection() as db:
-            try:
-                updated = db.execute(
-                    """UPDATE integration_connections
-                       SET display_identity=?,external_account_ref=?,
-                           observed_permissions_json=?,availability=?,
-                           last_error_code=?,last_verified_at=?,updated_at=?
-                       WHERE id=?""",
-                    (
-                        display_identity, external_account_ref,
-                        json.dumps(sorted(set(observed_permissions))),
-                        availability, error_code, now, now, connection_id,
-                    ),
-                )
-                db.commit()
-            finally:
-                db.close()
+            updated = db.execute(
+                """UPDATE integration_connections
+                   SET display_identity=?,external_account_ref=?,
+                       observed_permissions_json=?,availability=?,
+                       last_error_code=?,last_verified_at=?,updated_at=?
+                   WHERE id=?""",
+                (
+                    display_identity, external_account_ref,
+                    json.dumps(sorted(set(observed_permissions))),
+                    availability, error_code, now, now, connection_id,
+                ),
+            )
         if updated.rowcount != 1:
             raise KeyError("unknown_connection")
         return self.get(connection_id)
@@ -129,14 +124,10 @@ class ConnectionStore:
         connection_id = self._id(connection_id)
         now = _now()
         with self._connection() as db:
-            try:
-                updated = db.execute(
-                    "UPDATE integration_connections SET enabled=?,updated_at=? WHERE id=?",
-                    (1 if enabled else 0, now, connection_id),
-                )
-                db.commit()
-            finally:
-                db.close()
+            updated = db.execute(
+                "UPDATE integration_connections SET enabled=?,updated_at=? WHERE id=?",
+                (1 if enabled else 0, now, connection_id),
+            )
         if updated.rowcount != 1:
             raise KeyError("unknown_connection")
         return self.get(connection_id)
@@ -144,12 +135,8 @@ class ConnectionStore:
     def delete(self, connection_id: str) -> bool:
         connection_id = self._id(connection_id)
         with self._connection() as db:
-            try:
-                removed = db.execute(
-                    "DELETE FROM integration_connections WHERE id=?",
-                    (connection_id,),
-                )
-                db.commit()
-            finally:
-                db.close()
+            removed = db.execute(
+                "DELETE FROM integration_connections WHERE id=?",
+                (connection_id,),
+            )
         return removed.rowcount == 1
