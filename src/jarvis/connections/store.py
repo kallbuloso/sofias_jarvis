@@ -85,6 +85,17 @@ class ConnectionStore:
             ).fetchall()
         return [self._decode(row) for row in rows]
 
+    def list_by_provider(self, provider_id: str) -> list[dict]:
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            raise ValueError("invalid_provider_id")
+        with self._connection() as db:
+            rows = db.execute(
+                "SELECT * FROM integration_connections "
+                "WHERE provider_id=? ORDER BY created_at,id",
+                (provider_id.strip(),),
+            ).fetchall()
+        return [self._decode(row) for row in rows]
+
     def record_inspection(
         self, connection_id: str, *,
         display_identity: str | None,
