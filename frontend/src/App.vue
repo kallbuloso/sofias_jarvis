@@ -802,7 +802,7 @@ onMounted(async () => {
     <v-layout>
       <v-navigation-drawer permanent width="285" color="surface">
         <div class="sidebar-heading">
-          <div class="brand">JARVIS <span>TB-03</span></div>
+          <div class="brand">JARVIS <span>TB-04</span></div>
           <v-btn block color="primary" variant="flat" :disabled="!ready || busy || createBusy || memoryMutationBusy" @click="createConversation">
             Nova conversa
           </v-btn>
@@ -858,7 +858,7 @@ onMounted(async () => {
             </div>
           </div>
           <div v-if="!credentialConfigured" class="inline-alert" role="alert">
-            Configure sua chave pelo console: main.py --configure-openai-key
+            Configure e habilite um AI Provider em Integrações.
           </div>
           <div v-if="warning" class="inline-alert" role="alert" aria-live="assertive">
             {{ warning }}
