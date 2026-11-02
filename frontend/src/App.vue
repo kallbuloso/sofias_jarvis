@@ -446,7 +446,9 @@ async function startVoice(event) {
     }
     voiceState.value = 'LISTENING'
     voiceConversation.value = conversationId
-    if (voiceReleasePending.value) await stopVoice()
+    const releasedWhileStarting = voiceReleasePending.value
+    voiceStarting.value = false
+    if (releasedWhileStarting) await stopVoice()
   } catch {
     voiceState.value = 'IDLE'
     warning.value = 'Não foi possível iniciar a entrada por voz.'
