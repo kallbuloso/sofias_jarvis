@@ -5,14 +5,25 @@ must show an exact target preview and obtain separate human confirmation.
 """
 from __future__ import annotations
 
+import re
 from uuid import UUID, uuid4
 
 from jarvis.memory.cognitive import CognitiveMemoryClient, CognitiveMemoryError, _payload
 from jarvis.memory.connection import validate_memory_url
 from jarvis.memory.journal import MemoryOperationJournal
-from jarvis.memory.personal_confirmation import PersonalMutationAuthorization
+from jarvis.memory.personal_confirmation import (
+    PersonalMutationAuthorization,
+    is_conversational_confirmation,
+)
 from jarvis.memory.sensitive import looks_like_credential
 from jarvis.conversation.create_decision import evaluate_direct_create
+
+
+_DIRECT_UPDATE = re.compile(
+    r"^\s*(?:jarvis\s*[,!:\-]?\s+)?"
+    r"(?:atualize|altere|mude|substitua)\b",
+    re.IGNORECASE,
+)
 
 
 class PersonalMemoryLifecycle:
@@ -192,18 +203,48 @@ class PersonalMemoryLifecycle:
         if current != preview:
             raise ValueError("memory_changed_since_confirmation")
 
-    @staticmethod
-    def _require_typed_consent(
-        preview: dict, action: str, confirmation: PersonalMutationAuthorization,
+    def _require_mutation_consent(
+        self, preview: dict, action: str,
+        confirmation: PersonalMutationAuthorization,
     ) -> None:
         if (not isinstance(confirmation, PersonalMutationAuthorization)
                 or confirmation.action != action
                 or confirmation.target_memory_id != preview.get("memory_id")):
             raise ValueError("missing_or_mismatched_human_confirmation")
+        if confirmation.method == "user_direct_intent":
+            if action != "supersede" or confirmation.conversation_id is None:
+                raise ValueError("direct_intent_not_allowed_for_action")
+            message_id = confirmation.source_message_id
+            original = (
+                self.journal._store.verified_user_utterance(
+                    message_id, confirmation.conversation_id,
+                )
+                if message_id is not None else None
+            )
+            if (not isinstance(original, str)
+                    or _DIRECT_UPDATE.search(original) is None
+                    or "?" in original):
+                raise ValueError("direct_update_not_authorized_by_user_message")
+        elif confirmation.method == "conversation_confirmed":
+            if action != "forget" or confirmation.conversation_id is None:
+                raise ValueError("conversation_confirmation_not_allowed_for_action")
+            message_id = confirmation.source_message_id
+            original = (
+                self.journal._store.verified_user_utterance(
+                    message_id, confirmation.conversation_id,
+                )
+                if message_id is not None else None
+            )
+            if not is_conversational_confirmation(original):
+                raise ValueError("forget_not_confirmed_in_conversation")
+        elif confirmation.method not in {
+            "desktop_typed", "desktop_approved", "cli_typed",
+        }:
+            raise ValueError("unsupported_confirmation_method")
 
     def supersede(self, confirmed_preview: dict, *, new_content: str,
                   confirmation: PersonalMutationAuthorization) -> dict:
-        self._require_typed_consent(confirmed_preview, "supersede", confirmation)
+        self._require_mutation_consent(confirmed_preview, "supersede", confirmation)
         self._recheck(confirmed_preview, "supersede")
         if looks_like_credential(new_content):
             raise ValueError("sensitive_content_rejected")
@@ -212,6 +253,12 @@ class PersonalMemoryLifecycle:
             "origin_kind": "user_asserted", "source_system": "jarvis",
             "source_ref": f"memory-operation:{operation_id}",
         }
+        if confirmation.conversation_id is not None:
+            provenance["conversation_uuid"] = confirmation.conversation_id
+        if confirmation.source_message_id is not None:
+            provenance["confirmation_ref"] = (
+                "user-message:" + confirmation.source_message_id
+            )
         _payload(new_content, provenance)  # Validate BEFORE journal/network.
         target = confirmed_preview["memory_id"]
         payload = {
@@ -247,7 +294,7 @@ class PersonalMemoryLifecycle:
 
     def forget(self, confirmed_preview: dict, *,
                confirmation: PersonalMutationAuthorization) -> dict:
-        self._require_typed_consent(confirmed_preview, "forget", confirmation)
+        self._require_mutation_consent(confirmed_preview, "forget", confirmation)
         self._recheck(confirmed_preview, "forget")
         operation_id = str(uuid4())
         target = confirmed_preview["memory_id"]
