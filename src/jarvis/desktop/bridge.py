@@ -1717,8 +1717,7 @@ class JarvisBridge(QObject):
             )
         except Exception as exc:
             code = str(exc) or type(exc).__name__
-            if code in {"AI_CREDENTIAL_NOT_CONFIGURED",
-                        "AI_CONNECTION_NOT_AVAILABLE"}:
+            if code == "AI_CREDENTIAL_NOT_CONFIGURED":
                 code = "credential_not_configured"
             elif code == "SecureStorageUnavailable":
                 code = "secure_vault_unavailable"
