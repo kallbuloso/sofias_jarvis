@@ -11,6 +11,12 @@ pytest.importorskip("PySide6")
 from jarvis.desktop.bridge import JarvisBridge
 
 
+@pytest.fixture(autouse=True)
+def _native_inference_backend(monkeypatch):
+    """This module fakes the native OpenAI SDK; LiteLLM parity is tested separately."""
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
+
+
 def test_bridge_allows_conversation_crud_without_exposing_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     bridge = JarvisBridge()
