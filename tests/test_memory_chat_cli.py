@@ -22,6 +22,7 @@ def load_main():
 
 
 def configure_chat(monkeypatch, tmp_path, *, memory_exists=True):
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
     monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("JARVIS_MEMORY_URL", "https://memory.example")
     monkeypatch.setattr(WindowsCredentialStore, "get_openai_key", lambda self: "FAKE-OPENAI")
