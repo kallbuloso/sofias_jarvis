@@ -26,7 +26,7 @@ Estas escolhas são de implementação do TB-03, não restrições permanentes d
 
 ## Increment 1 — PTT + STT + canonical conversation
 
-**Implementation status:** DONE in feature branch; Windows pytest/build/microphone smoke PENDING.
+**Implementation status:** DONE; human Windows microphone smoke PASS (2026-11-02). Focused automated regression remains part of the next validation command.
 
 Fluxo:
 
@@ -43,6 +43,8 @@ Acceptance:
 - áudio capturado não é persistido.
 
 ## Increment 2 — TTS + playback control + spoken confirmation
+
+**Implementation status:** DONE in feature branch; Windows focused tests/build/TTS smoke PENDING.
 
 Fluxo:
 
@@ -113,4 +115,31 @@ Implemented on `feat/tb-03-voice-conversation`:
 - focused tests added in `tests/test_voice_increment1.py`.
 
 No TTS or playback is implemented in Increment 1.
+
+## Increment 1 human acceptance — 2026-11-02
+
+Owner validated real Windows microphone interaction. Push-to-talk captured:
+
+`Jarvis, responda apenas que o teste de voz está funcionando.`
+
+The final transcript entered the normal Conversation feed and JARVIS replied:
+
+`O teste de voz está funcionando.`
+
+This proves the first real voice → STT → canonical Conversation → normal inference vertical path.
+
+## Increment 2 implementation checkpoint — 2026-11-02
+
+Implemented local speech output through PySide6 `QTextToSpeech`:
+
+- only responses originating from a voice turn are spoken automatically;
+- the already persisted assistant text is the TTS source; no second inference is made;
+- pt-BR is preferred when the host speech engine exposes it;
+- playback state is surfaced to the UI;
+- the push-to-talk button becomes `Parar voz` during playback;
+- stopping speech affects only audible playback;
+- TTS unavailable/failure preserves the canonical textual response;
+- spoken `Confirmo.` still enters through STT and the existing TB-02 confirmation gate.
+
+The deprecated OpenAI Speech API was deliberately not introduced as the default TTS path.
 
