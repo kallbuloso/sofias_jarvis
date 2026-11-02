@@ -469,26 +469,44 @@ def main() -> int:
             from jarvis.connections.manager import ConnectionManager
             from jarvis.connections.store import ConnectionStore
             from jarvis.conversation.runtime import ConversationRuntime
+            from jarvis.inference.execution import resolve_inference_execution
             from jarvis.inference.factory import build_inference_provider
+            from jarvis.inference.profiles import InferenceProfileStore
+            from jarvis.inference.resolver import InferenceResolutionContext
             from jarvis.secrets.windows import WindowsCredentialStore
 
-            model = args.model or os.getenv("JARVIS_MODEL", "")
-            if not model.strip():
+            model_seed = args.model or os.getenv("JARVIS_MODEL", "")
+            if not model_seed.strip():
                 raise ValueError("Choose --model or configure JARVIS_MODEL")
+            vault = WindowsCredentialStore()
             manager = ConnectionManager(
-                ConnectionStore(database_path()), WindowsCredentialStore(),
+                ConnectionStore(database_path()), vault,
             )
-            ai_connection, credential = manager.resolve_ai_connection(
-                provider_id="openai",
-            )
+            profiles = InferenceProfileStore(database_path())
+            if profiles.get_by_slug("general") is None:
+                openai_connection = manager.ensure_default_openai_connection()
+                if openai_connection is None:
+                    raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+                profiles.ensure_general(
+                    connection_id=openai_connection["id"],
+                    model=model_seed.strip(),
+                )
             conversation_id = args.conversation_id or store.create_conversation()
             if store.get_conversation(conversation_id) is None:
                 raise ValueError("Unknown conversation ID")
             prompt = input("Você: ").strip()
             if not prompt:
                 raise ValueError("Message cannot be empty")
+            execution = resolve_inference_execution(
+                database_path(),
+                vault,
+                InferenceResolutionContext(
+                    conversation_id=conversation_id,
+                ),
+            )
+            plan = execution.plan
             provider = build_inference_provider(
-                ai_connection["provider_id"], credential,
+                plan.provider_id, execution.credential,
             )
             memory_provider = None
             knowledge_provider = None
@@ -547,7 +565,11 @@ def main() -> int:
             runtime = ConversationRuntime(store, provider)
             print(f"Conversation: {conversation_id}")
             print("JARVIS: ", end="", flush=True)
-            for delta in runtime.reply(conversation_id=conversation_id, text=prompt, model=model):
+            for delta in runtime.reply(
+                conversation_id=conversation_id,
+                text=prompt,
+                model=plan.model,
+            ):
                 print(delta, end="", flush=True)
             print()
             if memory_provider is not None:
