@@ -37,20 +37,28 @@ class ConnectionManager:
             "updated_at": item["updated_at"],
         }
 
+    def _secret_for(self, item: dict) -> str | None:
+        ref = item.get("credential_ref")
+        if ref == "legacy:openai:default":
+            return self.vault.get_openai_key()
+        return self.vault.get_connection_secret(item["id"])
+
     def _configured(self, connection_id: str) -> bool:
-        return bool(self.vault.get_connection_secret(connection_id))
+        item = self.store.get(connection_id)
+        return bool(item and self._secret_for(item))
 
     def ensure_default_openai_connection(self) -> dict | None:
-        """Migrate the legacy OpenAI credential into a normal AI Connection.
+        """Represent the existing OpenAI vault entry as a normal AI Connection.
 
-        The legacy credential entry is preserved for compatibility during TB-04.
+        The secret remains in the legacy Windows Credential Manager entry during
+        TB-04; only a non-secret credential_ref is added to SQLite.
         """
         existing = self.store.list_by_provider("openai")
         if existing:
             enabled = [item for item in existing if item["enabled"]]
             chosen = enabled[0] if enabled else existing[0]
             return self._public(
-                chosen, configured=self._configured(chosen["id"]),
+                chosen, configured=bool(self._secret_for(chosen)),
             )
 
         legacy = self.vault.get_openai_key()
@@ -63,19 +71,10 @@ class ConnectionManager:
                 "label": "OpenAI principal",
                 "migration_source": "legacy_openai_credential",
             },
+            credential_ref="legacy:openai:default",
         )
-        connection_id = item["id"]
-        try:
-            self.vault.set_connection_secret(connection_id, legacy)
-            self.store.set_enabled(connection_id, True)
-        except Exception:
-            try:
-                self.vault.delete_connection_secret(connection_id)
-            finally:
-                self.store.delete(connection_id)
-            raise
-
-        migrated = self.store.get(connection_id)
+        self.store.set_enabled(item["id"], True)
+        migrated = self.store.get(item["id"])
         return self._public(migrated, configured=True)
 
     def resolve_ai_connection(
@@ -110,7 +109,7 @@ class ConnectionManager:
             raise ValueError("AI_CONNECTION_AMBIGUOUS")
 
         item = candidates[0]
-        secret = self.vault.get_connection_secret(item["id"])
+        secret = self._secret_for(item)
         if not secret:
             raise ValueError("AI_CREDENTIAL_NOT_CONFIGURED")
         return self._public(item, configured=True), secret
@@ -206,5 +205,9 @@ class ConnectionManager:
             return False
         # Secret first: a DB failure leaves a safe unusable connection, while
         # deleting DB first could orphan a live credential.
-        self.vault.delete_connection_secret(connection_id)
+        item = self.store.get(connection_id)
+        if item is None:
+            return False
+        if item.get("credential_ref") != "legacy:openai:default":
+            self.vault.delete_connection_secret(connection_id)
         return self.store.delete(connection_id)
