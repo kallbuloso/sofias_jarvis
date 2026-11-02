@@ -29,6 +29,7 @@ def main_module():
 
 
 def environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
     monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("JARVIS_MEMORY_URL", "https://memory.example")
     monkeypatch.setattr(WindowsCredentialStore, "get_openai_key", lambda self: "FAKE-OPENAI")
