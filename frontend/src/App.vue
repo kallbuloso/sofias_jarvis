@@ -383,10 +383,13 @@ function handleStream(raw) {
         PERMISSION_INSUFFICIENT: 'A conexão Anthropic não possui permissão para esta inferência.',
         AUTHENTICATION_FAILED: 'A autenticação Anthropic falhou durante a inferência.',
       }
-      warning.value = routingErrors[event.routingError] ||
+      const base = routingErrors[event.routingError] ||
         ('Roteamento de intenções indisponível' +
           (event.routingError ? ' (' + event.routingError + ')' : '') +
           '; nenhuma ação automática de memória foi executada.')
+      warning.value = event.routingErrorDetail
+        ? base + ' Detalhe: ' + event.routingErrorDetail
+        : base
     }
     if (event.status !== 'completed') {
       warning.value = event.status === 'interrupted'
