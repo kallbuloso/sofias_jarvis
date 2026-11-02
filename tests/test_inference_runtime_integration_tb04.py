@@ -172,6 +172,12 @@ def test_dispatch_worker_receives_resolved_plan_not_ui_model(
         def start(self):
             pass
 
+        def quit(self):
+            pass
+
+        def deleteLater(self):
+            pass
+
     class FakeWorker:
         def __init__(self, conversation_id, prompt, model, credential, **kwargs):
             captured.update({
