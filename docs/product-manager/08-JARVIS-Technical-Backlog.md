@@ -5,12 +5,12 @@
 | **Projeto** | JARVIS — assistente pessoal universal |
 | **Fase** | 08 — Technical Backlog |
 | **Estado deste documento** | **BASELINE DE PLANEJAMENTO APROVADA** — roadmap inicial TB-01 a TB-08 e plano do TB-01 aprovados pelo proprietário |
-| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01)** — evidências em `docs/implementation/TB-01-Validation.md` e `docs/implementation/TB-02-Validation.md`; TB-03 a TB-08 permanecem no roadmap |
+| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01); TB-03 PRODUCT DONE (2026-11-02)** — evidências em `docs/implementation/TB-01-Validation.md`, `TB-02-Validation.md` e `TB-03-Validation.md`; TB-04 a TB-08 permanecem no roadmap |
 | **Data** | 2026-10-30 |
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | TB-03 Increment 1: push-to-talk, captura local, STT final e entrada na mesma Conversation |
+| **Próxima atividade** | Revisar e integrar o PR de conclusão do TB-03; depois detalhar/aprovar TB-04 antes de implementar providers/connections adicionais |
 
 > **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
@@ -20,7 +20,7 @@
 |---|---|---|
 | **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
 | **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **PRODUCT DONE (2026-11-01)** — validação final em `docs/implementation/TB-02-Validation.md` |
-| **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **APPROVED / IN PROGRESS** — plano executável em `docs/implementation/TB-03-Voice-Plan.md` |
+| **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **PRODUCT DONE (2026-11-02)** — validação final em `docs/implementation/TB-03-Validation.md` |
 | **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **ROADMAP** |
 | **TB-05 — Ferramentas de consulta** | Capacidades READ verificadas em dois domínios externos reais | **ROADMAP** |
 | **TB-06 — Execução supervisionada** | Confirmação, política, journal e um efeito externo real verificável | **ROADMAP** |
@@ -597,4 +597,26 @@ Decisão do Slice: começar por **push-to-talk** no Windows 11, com captura/repr
 Wake word, escuta contínua, full-duplex, barge-in automático e confirmação exclusivamente por voz de operações críticas permanecem fora do TB-03.
 
 Plano: `docs/implementation/TB-03-Voice-Plan.md`.
+
+---
+
+## 24. TB-03 — PRODUCT DONE (2026-11-02)
+
+O Slice de voz foi concluído e validado no Windows pelo proprietário.
+
+Evidência final:
+
+- push-to-talk real: PASS;
+- STT final na mesma Conversation: PASS;
+- TTS local da resposta canônica: PASS;
+- interrupção de playback sem cancelar conversa/operação: PASS;
+- Create por voz: PASS;
+- Forget por voz + `Confirmo.` falado usando o mesmo gate one-shot do texto: PASS;
+- testes focados: `8 passed in 0.22s`;
+- regressão completa final: PASS;
+- frontend production build final: PASS.
+
+**Estado final:** **TB-03 PRODUCT DONE**.  
+**Evidência consolidada:** `docs/implementation/TB-03-Validation.md`.  
+**TB-04 não é autorizado automaticamente por este fechamento.**
 
