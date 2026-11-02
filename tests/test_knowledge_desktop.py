@@ -15,6 +15,12 @@ from jarvis.memory import connection, knowledge, cognitive
 from jarvis.conversation.store import SQLiteConversationStore
 from jarvis.secrets.windows import WindowsCredentialStore
 
+
+@pytest.fixture(autouse=True)
+def _native_inference_backend(monkeypatch):
+    """Knowledge behavior is isolated from provider transport in this module."""
+    monkeypatch.setenv("JARVIS_INFERENCE_BACKEND", "native")
+
 DATASET_ID = str(uuid4())
 SOURCE_ID = str(uuid4())
 DOCUMENT_ID = str(uuid4())
