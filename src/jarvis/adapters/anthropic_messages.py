@@ -9,6 +9,32 @@ from typing import Any
 class AnthropicProviderResponseError(RuntimeError):
     """Anthropic failed or did not complete a provider-neutral response."""
 
+    def __init__(self, message: str, *, code: str = "PROVIDER_RESPONSE_INVALID"):
+        self.code = code
+        super().__init__(message)
+
+
+def _api_error_code(exc: Exception) -> str:
+    status = getattr(exc, "status_code", None)
+    if status == 400:
+        return "PROVIDER_REQUEST_INVALID"
+    if status == 401:
+        return "AUTHENTICATION_FAILED"
+    if status == 403:
+        return "PERMISSION_INSUFFICIENT"
+    if status == 404:
+        return "MODEL_NOT_AVAILABLE"
+    if status == 429:
+        return "RATE_LIMITED"
+    if isinstance(status, int) and status >= 500:
+        return "PROVIDER_UNAVAILABLE"
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return "PROVIDER_TIMEOUT"
+    if "connection" in name:
+        return "PROVIDER_UNAVAILABLE"
+    return "PROVIDER_REQUEST_FAILED"
+
 
 def _normalize_messages(messages: list[dict]) -> tuple[str | None, list[dict]]:
     if not isinstance(messages, list) or not messages:
@@ -53,16 +79,23 @@ class AnthropicMessagesAdapter:
         if system is not None:
             kwargs["system"] = system
 
-        with self.client.messages.stream(**kwargs) as stream:
-            for text in stream.text_stream:
-                if text:
-                    yield text
-            final = stream.get_final_message()
+        try:
+            with self.client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        yield text
+                final = stream.get_final_message()
+        except Exception as exc:
+            raise AnthropicProviderResponseError(
+                "Anthropic streaming request failed",
+                code=_api_error_code(exc),
+            ) from exc
 
         stop_reason = getattr(final, "stop_reason", None)
         if stop_reason not in {"end_turn", "stop_sequence"}:
             raise AnthropicProviderResponseError(
-                f"Provider did not complete safely: {stop_reason or 'unknown'}"
+                f"Provider did not complete safely: {stop_reason or 'unknown'}",
+                code="PROVIDER_RESPONSE_INCOMPLETE",
             )
 
     def generate_json(
@@ -91,12 +124,19 @@ class AnthropicMessagesAdapter:
         if system is not None:
             kwargs["system"] = system
 
-        response = self.client.messages.create(**kwargs)
+        try:
+            response = self.client.messages.create(**kwargs)
+        except Exception as exc:
+            raise AnthropicProviderResponseError(
+                "Anthropic structured request failed",
+                code=_api_error_code(exc),
+            ) from exc
         stop_reason = getattr(response, "stop_reason", None)
         if stop_reason not in {"end_turn", "stop_sequence"}:
             raise AnthropicProviderResponseError(
                 f"Provider did not complete structured output safely: "
-                f"{stop_reason or 'unknown'}"
+                f"{stop_reason or 'unknown'}",
+                code="PROVIDER_RESPONSE_INCOMPLETE",
             )
         raw = next(
             (
@@ -109,11 +149,13 @@ class AnthropicMessagesAdapter:
         )
         if not isinstance(raw, str) or not raw or len(raw) > 18000:
             raise AnthropicProviderResponseError(
-                "Provider returned invalid structured output"
+                "Provider returned invalid structured output",
+                code="PROVIDER_RESPONSE_INVALID",
             )
         value = json.loads(raw)
         if not isinstance(value, dict):
             raise AnthropicProviderResponseError(
-                "Provider returned non-object structured output"
+                "Provider returned non-object structured output",
+                code="PROVIDER_RESPONSE_INVALID",
             )
         return value
