@@ -88,6 +88,7 @@ class ConnectionManager:
     def resolve_ai_connection(
         self, *, provider_id: str = "openai",
         connection_id: str | None = None,
+        model_id: str | None = None,
     ) -> tuple[dict, str]:
         descriptor = self.registry.get(provider_id)
         if descriptor is None or descriptor.provider_type != "ai_inference":
@@ -117,10 +118,23 @@ class ConnectionManager:
             raise ValueError("AI_CONNECTION_AMBIGUOUS")
 
         item = candidates[0]
-        if item["availability"] in {
-            "auth_required", "permission_insufficient", "unavailable", "error",
-        }:
-            raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+        if descriptor.status_check_support:
+            if item["availability"] == "unknown":
+                raise ValueError("AI_CONNECTION_NOT_VERIFIED")
+            if item["availability"] in {
+                "auth_required", "permission_insufficient",
+                "unavailable", "error",
+            }:
+                raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+            observed_models = item["configuration"].get(
+                "observed_models", []
+            )
+            if model_id is not None:
+                if (not isinstance(model_id, str) or not model_id.strip()):
+                    raise ValueError("AI_MODEL_NOT_AVAILABLE")
+                if (observed_models
+                        and model_id.strip() not in observed_models):
+                    raise ValueError("AI_MODEL_NOT_AVAILABLE")
         secret = self._secret_for(item)
         if not secret:
             raise ValueError("AI_CREDENTIAL_NOT_CONFIGURED")
@@ -189,6 +203,17 @@ class ConnectionManager:
 
         try:
             observed = verifier.inspect(secret)
+            model_ids = [
+                model["id"] for model in observed["available_models"]
+                if isinstance(model, dict)
+                and isinstance(model.get("id"), str)
+                and model["id"]
+            ]
+            configuration = dict(item["configuration"])
+            configuration["observed_models"] = model_ids
+            self.store.update_configuration(
+                connection_id, configuration,
+            )
             updated = self.store.record_inspection(
                 connection_id,
                 display_identity=item["display_identity"],
