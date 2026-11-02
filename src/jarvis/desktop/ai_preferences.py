@@ -77,6 +77,15 @@ def save_ai_selection(
 
     current = load_ai_selection()
     models = dict(current["models"]) if current else {}
+    if current is None and provider_id != "openai":
+        # Preserve the pre-TB-04 OpenAI model preference on the first rotation.
+        try:
+            from jarvis.desktop.model_preferences import load_preferred_model
+            legacy_openai_model = load_preferred_model()
+        except Exception:
+            legacy_openai_model = ""
+        if _valid_model(legacy_openai_model):
+            models["openai"] = legacy_openai_model
     models[provider_id] = model
     value = {
         "provider_id": provider_id,
