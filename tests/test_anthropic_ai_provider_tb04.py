@@ -229,3 +229,41 @@ def test_anthropic_sdk_error_codes_are_normalized_without_exposing_message():
         )
     assert captured.value.code == "BILLING_UNAVAILABLE"
 
+def test_anthropic_invalid_request_keeps_safe_api_detail_only():
+    class InvalidRequest(Exception):
+        status_code = 400
+        body = {
+            "error": {
+                "type": "invalid_request_error",
+                "message": "schema: example safe validation detail",
+            },
+            "secret": "MUST-NOT-APPEAR",
+        }
+
+    class InvalidMessages:
+        def create(self, **kwargs):
+            raise InvalidRequest("raw exception PRIVATE-TOKEN")
+
+    adapter = AnthropicMessagesAdapter(
+        SimpleNamespace(messages=InvalidMessages())
+    )
+    with pytest.raises(AnthropicProviderResponseError) as captured:
+        adapter.generate_json(
+            model="claude-sonnet-5-5",
+            messages=[{"role": "user", "content": "Oi"}],
+            schema_name="x",
+            schema={
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": False,
+            },
+        )
+
+    assert captured.value.code == "PROVIDER_REQUEST_INVALID"
+    assert captured.value.detail == (
+        "invalid_request_error: schema: example safe validation detail"
+    )
+    assert "PRIVATE-TOKEN" not in captured.value.detail
+    assert "MUST-NOT-APPEAR" not in captured.value.detail
+
