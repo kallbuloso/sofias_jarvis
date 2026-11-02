@@ -44,7 +44,7 @@ def environment(monkeypatch, tmp_path):
             yield SimpleNamespace(type="response.completed", delta="")
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(
-        OpenAI=lambda api_key: SimpleNamespace(responses=Responses()),
+        OpenAI=lambda **kwargs: SimpleNamespace(responses=Responses()),
     ))
 
     class FakeKnowledge:
