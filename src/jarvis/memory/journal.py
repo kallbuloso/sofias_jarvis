@@ -63,13 +63,19 @@ class MemoryOperationJournal:
                     or confirmation.target_memory_id != target_memory_id
                     or confirmation.method not in {
                         "desktop_typed", "desktop_approved", "cli_typed",
-                        "user_direct_intent"
+                        "user_direct_intent", "conversation_confirmed"
                     }
                     or (confirmation.method == "user_direct_intent"
-                        and (kind != "create" or confirmation.conversation_id is None
+                        and (kind not in {"create", "user_supersede"}
+                             or confirmation.conversation_id is None
                              or confirmation.source_message_id is None))
-                    or (confirmation.method != "user_direct_intent"
-                        and confirmation.source_message_id is not None)
+                    or (confirmation.method == "conversation_confirmed"
+                        and (kind != "user_forget"
+                             or confirmation.conversation_id is None
+                             or confirmation.source_message_id is None))
+                    or (confirmation.method not in {
+                            "user_direct_intent", "conversation_confirmed"
+                        } and confirmation.source_message_id is not None)
                     or (confirmation.method == "desktop_approved"
                         and confirmation.conversation_id is None)
                     or (confirmation.method == "desktop_typed"
@@ -77,9 +83,10 @@ class MemoryOperationJournal:
                     or (confirmation.method == "cli_typed"
                         and confirmation.conversation_id is not None)):
                 raise ValueError("confirmation_does_not_match_operation")
-            if confirmation.method == "user_direct_intent":
-                # Source message's UUID is a stable, non-replayable operation
-                # authority key across process restarts; never use model IDs.
+            if confirmation.method in {
+                "user_direct_intent", "conversation_confirmed"
+            }:
+                # A persisted user turn is the stable authority evidence.
                 confirmation_ref = (
                     "user-message:" + str(UUID(confirmation.source_message_id))
                 )
@@ -93,7 +100,10 @@ class MemoryOperationJournal:
         serialized = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         now = _now()
         with self._store._connection() as db:
-            if confirmation is not None and confirmation.method == "user_direct_intent":
+            if (confirmation is not None
+                    and confirmation.method in {
+                        "user_direct_intent", "conversation_confirmed"
+                    }):
                 row = db.execute(
                     "SELECT 1 FROM messages WHERE id=? AND conversation_id=? "
                     "AND role='user' AND status='completed'",
