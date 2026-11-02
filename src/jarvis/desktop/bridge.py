@@ -835,6 +835,8 @@ class IntegrationConnectionWorker(QObject):
                     self.payload["token"],
                     label=self.payload.get("label", ""),
                 )
+            elif self.action == "verify_ai":
+                item = manager.verify_ai(self.payload["connection_id"])
             elif self.action == "inspect":
                 item = manager.inspect(self.payload["connection_id"])
             else:
@@ -1095,6 +1097,16 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": "invalid_label"})
         return self._start_connection_worker(
             "create_github", {"label": label.strip(), "token": token.strip()},
+        )
+
+    @Slot(str, result=str)
+    def checkAIConnection(self, connection_id: str) -> str:
+        try:
+            connection_id = str(UUID(connection_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_connection"})
+        return self._start_connection_worker(
+            "verify_ai", {"connection_id": connection_id},
         )
 
     @Slot(str, result=str)
