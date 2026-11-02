@@ -833,23 +833,11 @@ onMounted(async () => {
     <v-dialog v-model="integrationsDialog" max-width="760">
       <v-card title="Integrações">
         <v-card-text>
-          <div class="integration-section">
-            <div class="heading">GitHub</div>
-            <div class="small-text">
-              Fine-grained PAT · a credencial será armazenada somente no Windows Credential Manager.
-            </div>
-            <v-text-field v-model="githubLabel" label="Identificação opcional"
-              variant="outlined" density="compact" class="mt-4"/>
-            <v-text-field v-model="githubToken" label="Fine-grained personal access token"
-              type="password" autocomplete="off" variant="outlined" density="compact"/>
-            <v-btn color="primary" :loading="integrationBusy"
-              :disabled="integrationBusy || !githubToken.trim()"
-              @click="configureGitHub">Conectar GitHub</v-btn>
-          </div>
-
-          <v-divider class="my-5"/>
-
           <div class="heading mb-2">AI Providers</div>
+          <div v-if="!integrationConnections.some(
+              item => item.provider_type === 'ai_inference')" class="small-text">
+            Nenhum AI Provider configurado.
+          </div>
           <v-card v-for="connection in integrationConnections.filter(
               item => item.provider_type === 'ai_inference')"
             :key="connection.id" variant="outlined" class="mb-3">
@@ -873,14 +861,26 @@ onMounted(async () => {
             </v-card-text>
           </v-card>
 
-          <div class="heading mt-5 mb-2">Integrações externas</div>
-          <div v-if="!integrationConnections.some(
-              item => item.provider_type === 'external_integration')" class="small-text">
-            Nenhuma integração externa configurada.
+          <v-divider class="my-5"/>
+
+          <div class="heading mb-2">Integrações externas</div>
+          <div class="integration-section">
+            <strong>GitHub</strong>
+            <div class="small-text">
+              Fine-grained PAT · a credencial será armazenada somente no Windows Credential Manager.
+            </div>
+            <v-text-field v-model="githubLabel" label="Identificação opcional"
+              variant="outlined" density="compact" class="mt-4"/>
+            <v-text-field v-model="githubToken" label="Fine-grained personal access token"
+              type="password" autocomplete="off" variant="outlined" density="compact"/>
+            <v-btn color="primary" :loading="integrationBusy"
+              :disabled="integrationBusy || !githubToken.trim()"
+              @click="configureGitHub">Conectar GitHub</v-btn>
           </div>
+
           <v-card v-for="connection in integrationConnections.filter(
               item => item.provider_type === 'external_integration')"
-            :key="connection.id" variant="outlined" class="mb-3">
+            :key="connection.id" variant="outlined" class="mt-4 mb-3">
             <v-card-text>
               <div class="integration-row">
                 <div>
