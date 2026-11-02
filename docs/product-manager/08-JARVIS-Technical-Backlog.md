@@ -10,7 +10,7 @@
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | TB-04D1/D2: validar schema v7 + InferenceProfileStore + migração idempotente do profile global `general`; após PASS, implementar InferenceResolver determinístico sem fallback |
+| **Próxima atividade** | TB-04D3: validar InferenceResolver determinístico e proveniência de resolução; após PASS, integrar ResolvedInferencePlan ao ReplyWorker/CLI sem fallback |
 
 > **Fidelidade:** este documento preserva o roadmap e o histórico de execução. TB-01, TB-02 e TB-03 estão PRODUCT DONE; TB-04 está APPROVED / IN PROGRESS; TB-05 a TB-08 permanecem roadmap sem autorização implícita de implementação. Tecnologias futuras continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
