@@ -437,3 +437,57 @@ def test_natural_target_resolution_uses_best_owned_hit_and_still_requires_previe
     assert preview["memory_id"] == first
     assert preview["content"] == "Prefiro teal"
 
+def test_direct_update_uses_persisted_user_order_without_second_confirmation(lifecycle):
+    target = owned(lifecycle.journal, lifecycle.client)
+    preview = lifecycle.preview(target, action="supersede")
+    store = lifecycle.journal._store
+    conversation = store.create_conversation()
+    message = store.append_user_message(
+        conversation, "JARVIS, atualize minha preferência de cor para azul."
+    )
+    consent = PersonalMutationAuthorization.from_explicit_user_message(
+        action="supersede",
+        target_memory_id=target,
+        conversation_id=conversation,
+        message_id=message,
+    )
+    result = lifecycle.supersede(
+        preview, new_content="Prefiro azul", confirmation=consent,
+    )
+    assert result["status"] == "CONFIRMED"
+    record = lifecycle.journal.get(result["operation_id"])
+    assert record["confirmation_method"] == "user_direct_intent"
+    assert record["confirmation_ref"] == "user-message:" + message
+    assert record["confirmation_conversation_id"] == conversation
+
+
+def test_forget_accepts_only_persisted_conversational_confirmation(lifecycle):
+    target = owned(lifecycle.journal, lifecycle.client)
+    preview = lifecycle.preview(target, action="forget")
+    store = lifecycle.journal._store
+    conversation = store.create_conversation()
+    message = store.append_user_message(conversation, "Confirmo")
+    consent = PersonalMutationAuthorization.from_conversation_confirmation(
+        action="forget",
+        target_memory_id=target,
+        conversation_id=conversation,
+        message_id=message,
+    )
+    result = lifecycle.forget(preview, confirmation=consent)
+    assert result["status"] == "CONFIRMED"
+    record = lifecycle.journal.get(result["operation_id"])
+    assert record["confirmation_method"] == "conversation_confirmed"
+    assert record["confirmation_ref"] == "user-message:" + message
+
+    other = owned(lifecycle.journal, lifecycle.client)
+    bad_preview = lifecycle.preview(other, action="forget")
+    bad_message = store.append_user_message(conversation, "talvez")
+    bad_consent = PersonalMutationAuthorization.from_conversation_confirmation(
+        action="forget",
+        target_memory_id=other,
+        conversation_id=conversation,
+        message_id=bad_message,
+    )
+    with pytest.raises(ValueError, match="forget_not_confirmed"):
+        lifecycle.forget(bad_preview, confirmation=bad_consent)
+
