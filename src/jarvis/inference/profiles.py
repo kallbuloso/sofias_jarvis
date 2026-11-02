@@ -250,6 +250,18 @@ class InferenceProfileStore:
             ).fetchone()
         return self._decode_binding(row) if row else None
 
+    def unbind(
+        self, *, scope_type: str, scope_id: str | None = None,
+    ) -> bool:
+        scope_type, scope_id = _scope(scope_type, scope_id)
+        with self._connection() as db:
+            removed = db.execute(
+                "DELETE FROM inference_bindings "
+                "WHERE scope_type=? AND scope_id=?",
+                (scope_type, scope_id),
+            )
+        return removed.rowcount == 1
+
     def update_primary(
         self, profile_id: str, *, connection_id: str, model: str,
     ) -> dict:
