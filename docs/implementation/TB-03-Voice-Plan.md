@@ -26,6 +26,8 @@ Estas escolhas são de implementação do TB-03, não restrições permanentes d
 
 ## Increment 1 — PTT + STT + canonical conversation
 
+**Implementation status:** DONE in feature branch; Windows pytest/build/microphone smoke PENDING.
+
 Fluxo:
 
 `hold microphone → local capture → release → transcription final → sendConversationalMessage → normal JARVIS reply`
@@ -94,3 +96,21 @@ Tests remain proportional to risk:
 - one final full regression and Vite build at Product Done.
 
 Do not repeat full-suite regression after every small edit.
+
+## Increment 1 implementation checkpoint — 2026-11-02
+
+Implemented on `feat/tb-03-voice-conversation`:
+
+- in-memory QtMultimedia push-to-talk capture using PCM16 mono;
+- WAV materialization only in memory; no raw-audio file persistence;
+- OpenAI STT adapter with configurable `JARVIS_STT_MODEL` (default `gpt-transcribe`);
+- STT work on a QThread, outside the GUI thread;
+- Conversation is bound when capture starts and preserved through transcription;
+- only final transcript is emitted to the UI and routed through the existing `sendConversationalMessage`;
+- spoken `Confirmo.` therefore reaches the same pending Forget gate as typed text;
+- shutdown during active capture discards the partial turn;
+- desktop push-to-talk control uses pointer press/release;
+- focused tests added in `tests/test_voice_increment1.py`.
+
+No TTS or playback is implemented in Increment 1.
+
