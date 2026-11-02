@@ -986,6 +986,12 @@ onMounted(async () => {
                     @click="toggleIntegration(connection)">
                     {{ connection.enabled ? 'Desabilitar' : 'Habilitar' }}
                   </v-btn>
+                  <v-btn v-if="connection.configuration?.migration_source !==
+                      'legacy_openai_credential'"
+                    size="small" variant="text" color="error"
+                    :disabled="integrationBusy" @click="removeIntegration(connection)">
+                    Remover
+                  </v-btn>
                 </div>
               </div>
             </v-card-text>
