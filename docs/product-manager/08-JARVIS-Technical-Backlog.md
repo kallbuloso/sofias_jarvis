@@ -5,12 +5,12 @@
 | **Projeto** | JARVIS — assistente pessoal universal |
 | **Fase** | 08 — Technical Backlog |
 | **Estado deste documento** | **BASELINE DE PLANEJAMENTO APROVADA** — roadmap inicial TB-01 a TB-08 e plano do TB-01 aprovados pelo proprietário |
-| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31)** — ver `docs/implementation/TB-01-Validation.md`; TB-02 a TB-08 continuam somente no roadmap |
+| **Estado de implementação** | **TB-01 PRODUCT DONE (2026-10-31); TB-02 PRODUCT DONE (2026-11-01)** — evidências em `docs/implementation/TB-01-Validation.md` e `docs/implementation/TB-02-Validation.md`; TB-03 a TB-08 permanecem no roadmap |
 | **Data** | 2026-10-30 |
 | **Papel** | Product Engineer / Software Architect |
 | **Destino** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
-| **Próxima atividade** | Validar o Create/Get/Recall explícito do TB-02 no Windows; depois avançar Context Integration e Knowledge Retrieval sem antecipar Slices posteriores |
+| **Próxima atividade** | Revisar e integrar o PR de conclusão do TB-02; depois detalhar/aprovar TB-03 antes de qualquer implementação de voz |
 
 > **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
@@ -19,7 +19,7 @@
 | Slice | Entrega utilizável esperada | Estado de planejamento |
 |---|---|---|
 | **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
-| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **APPROVED / IN PROGRESS** — aprovação do proprietário após auditoria e diagnóstico da instância real; ver `docs/implementation/TB-02-Cognitive-Adapter.md` |
+| **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **PRODUCT DONE (2026-11-01)** — validação final em `docs/implementation/TB-02-Validation.md` |
 | **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **ROADMAP** |
 | **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **ROADMAP** |
 | **TB-05 — Ferramentas de consulta** | Capacidades READ verificadas em dois domínios externos reais | **ROADMAP** |
@@ -167,9 +167,9 @@ Detalhamento e aprovação de TB-02 a TB-08; integração Memory; voz; providers
 | **Project** | JARVIS |
 | **Current phase** | 08 — Technical Backlog |
 | **Current artifact** | `docs/product-manager/08-JARVIS-Technical-Backlog.md` |
-| **Current Slice** | TB-01 — PRODUCT DONE; PR para revisão/merge |
-| **Next legitimate step** | Revisar PR do TB-01 e obter autorização para merge; TB-02 exige planejamento e aprovação próprios |
-| **Forbidden inference** | TB-02 a TB-08 não estão aprovados como planos executáveis; a viabilidade da UI foi demonstrada no TB-01, mas não implica validação futura de voz e confirmações; merge não autorizado automaticamente |
+| **Current Slice** | TB-02 — PRODUCT DONE; PR para revisão/merge |
+| **Next legitimate step** | Revisar/mergear o PR do TB-02; depois planejar e aprovar TB-03 antes de implementar voz |
+| **Forbidden inference** | TB-03 a TB-08 não estão automaticamente aprovados como planos executáveis; TB-02 não implementa voz nem a política geral de execução crítica; merge continua uma ação explícita sobre `main` |
 
 *Fim de JARVIS — Technical Backlog (baseline inicial).* 
 
@@ -562,3 +562,27 @@ executed on owner environment. See the exact policy amendment:
 `docs/product-manager/09-JARVIS-Direct-Memory-Authorization-Amendment.md`.
 TB-02 remains open, feature branch only, no main merge. End-to-end
 natural Update/Forget remains deferred pending target resolution.
+
+---
+
+## 22. TB-02 — PRODUCT DONE (2026-11-01)
+
+Este registro substitui apenas o **estado atual** dos checkpoints anteriores; eles permanecem no documento como histórico de execução.
+
+Validação final reportada pelo proprietário no Windows:
+
+- **297 passed in 11.71s** na regressão completa;
+- **Vite production build PASS** — 559 módulos, 5.49s;
+- Create natural explícito: gravação direta confirmada;
+- Update natural explícito: Supersede direto confirmado, sem modal;
+- Forget natural: confirmação no próprio chat (`Confirmo.`) e esquecimento confirmado;
+- desktop permaneceu operacional após o ciclo de mutações;
+- degradação controlada do Sofias Memory bloqueou escrita sem alegar sucesso;
+- Knowledge Retrieval + proveniência durável já haviam sido validados em smoke real.
+
+A semântica de autoridade aceita no fechamento é proporcional ao risco: Create/Update de baixo risco e inequívocos podem usar a própria ordem persistida; Forget exige confirmação conversacional; operações críticas futuras ficam fora do TB-02 e poderão exigir confirmação adicional de UI.
+
+**Estado final:** **TB-02 PRODUCT DONE**.  
+**Evidência consolidada:** `docs/implementation/TB-02-Validation.md`.  
+**TB-03 não é autorizado automaticamente por este fechamento.**
+
