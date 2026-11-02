@@ -201,13 +201,12 @@ class ConnectionManager:
         return self._public(updated, configured=self._configured(connection_id))
 
     def remove(self, connection_id: str) -> bool:
-        if self.store.get(connection_id) is None:
-            return False
-        # Secret first: a DB failure leaves a safe unusable connection, while
-        # deleting DB first could orphan a live credential.
         item = self.store.get(connection_id)
         if item is None:
             return False
+        # Secret first for connection-owned credentials: a DB failure leaves
+        # a safe unusable connection rather than an orphaned live credential.
+        # Legacy OpenAI remains in its original vault entry during TB-04.
         if item.get("credential_ref") != "legacy:openai:default":
             self.vault.delete_connection_secret(connection_id)
         return self.store.delete(connection_id)
