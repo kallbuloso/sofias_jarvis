@@ -17,11 +17,13 @@ class ConnectionManager:
     def providers(self) -> list[dict]:
         return self.registry.list()
 
-    @staticmethod
-    def _public(item: dict, *, configured: bool) -> dict:
+    def _public(self, item: dict, *, configured: bool) -> dict:
+        descriptor = self.registry.get(item["provider_id"])
         return {
             "id": item["id"],
             "provider_id": item["provider_id"],
+            "provider_type": descriptor.provider_type if descriptor else "unknown",
+            "provider_name": descriptor.display_name if descriptor else item["provider_id"],
             "display_identity": item["display_identity"],
             "external_account_ref": item["external_account_ref"],
             "configuration": item["configuration"],
