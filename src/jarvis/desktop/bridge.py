@@ -1105,6 +1105,20 @@ class JarvisBridge(QObject):
                 model_id=model.strip(),
             )
             save_ai_selection(provider_id, connection_id, model.strip())
+            from jarvis.inference.profiles import InferenceProfileStore
+            profiles = InferenceProfileStore(database_path())
+            general = profiles.get_by_slug("general")
+            if general is None:
+                profiles.ensure_general(
+                    connection_id=connection_id,
+                    model=model.strip(),
+                )
+            else:
+                profiles.update_primary(
+                    general["id"],
+                    connection_id=connection_id,
+                    model=model.strip(),
+                )
             if provider_id == "openai":
                 save_preferred_model(model.strip())
         except Exception as exc:
@@ -1754,6 +1768,59 @@ class JarvisBridge(QObject):
         if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
+    def _resolve_dispatch_inference(
+        self, conversation_id: str, model_seed: str,
+    ):
+        """Resolve profile policy, seeding general only for legacy bootstrap gaps."""
+        from jarvis.inference.execution import resolve_inference_execution
+        from jarvis.inference.profiles import InferenceProfileStore
+        from jarvis.inference.resolver import (
+            InferenceResolutionContext,
+            InferenceResolutionError,
+        )
+
+        profiles = InferenceProfileStore(database_path())
+        try:
+            return resolve_inference_execution(
+                database_path(),
+                WindowsCredentialStore(),
+                InferenceResolutionContext(
+                    conversation_id=conversation_id,
+                ),
+            )
+        except InferenceResolutionError as exc:
+            if exc.code != "INFERENCE_PROFILE_NOT_CONFIGURED":
+                raise
+
+        # Compatibility path for tests/first-run callers that dispatch before
+        # desktop bootstrap has materialized the global profile.
+        manager = self._connection_manager()
+        connection = None
+        if self._active_ai_connection_id is not None:
+            try:
+                connection, _ = manager.resolve_ai_connection(
+                    provider_id=self._active_ai_provider,
+                    connection_id=self._active_ai_connection_id,
+                    model_id=model_seed,
+                )
+            except Exception:
+                connection = None
+        if connection is None and self._active_ai_provider == "openai":
+            connection = manager.ensure_default_openai_connection()
+        if connection is None:
+            raise InferenceResolutionError("INFERENCE_PROFILE_NOT_CONFIGURED")
+        profiles.ensure_general(
+            connection_id=connection["id"],
+            model=model_seed,
+        )
+        return resolve_inference_execution(
+            database_path(),
+            WindowsCredentialStore(),
+            InferenceResolutionContext(
+                conversation_id=conversation_id,
+            ),
+        )
+
     def _dispatch(
         self, conversation_id: str, prompt: str, model: str, *,
         memory_scope: str | None,
@@ -1773,15 +1840,14 @@ class JarvisBridge(QObject):
         if self._store.get_conversation(conversation_id) is None:
             return _json({"ok": False, "error": "unknown_conversation"})
         try:
-            ai_connection, credential = (
-                self._connection_manager().resolve_ai_connection(
-                    provider_id=self._active_ai_provider,
-                    connection_id=self._active_ai_connection_id,
-                    model_id=model.strip(),
-                )
+            execution = self._resolve_dispatch_inference(
+                conversation_id, model.strip(),
             )
+            plan = execution.plan
+            ai_connection = execution.connection
+            credential = execution.credential
         except Exception as exc:
-            code = str(exc) or type(exc).__name__
+            code = getattr(exc, "code", None) or str(exc) or type(exc).__name__
             if code == "AI_CREDENTIAL_NOT_CONFIGURED":
                 code = "credential_not_configured"
             elif code == "SecureStorageUnavailable":
@@ -1789,9 +1855,9 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": code})
 
         worker = ReplyWorker(
-            conversation_id, prompt.strip(), model.strip(), credential,
-            provider_id=ai_connection["provider_id"],
-            connection_id=ai_connection["id"],
+            conversation_id, prompt.strip(), plan.model, credential,
+            provider_id=plan.provider_id,
+            connection_id=plan.connection_id,
             memory_scope=memory_scope,
             knowledge_dataset=knowledge_dataset,
             conversational=conversational,
@@ -1817,14 +1883,15 @@ class JarvisBridge(QObject):
         # This is a desktop preference, not the cognitive memory store.
         # Do not abort an accepted reply if the local preference write fails.
         try:
-            if self._active_ai_connection_id is not None:
-                save_ai_selection(
-                    self._active_ai_provider,
-                    self._active_ai_connection_id,
-                    model.strip(),
-                )
-            if self._active_ai_provider == "openai":
-                save_preferred_model(model.strip())
+            save_ai_selection(
+                plan.provider_id,
+                plan.connection_id,
+                plan.model,
+            )
+            self._active_ai_provider = plan.provider_id
+            self._active_ai_connection_id = plan.connection_id
+            if plan.provider_id == "openai":
+                save_preferred_model(plan.model)
         except (OSError, ValueError) as exc:
             trace("desktop_ai_preference_write_failed",
                   error_class=type(exc).__name__)
