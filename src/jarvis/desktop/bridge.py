@@ -825,6 +825,11 @@ class JarvisBridge(QObject):
         self._voice_worker: VoiceTranscriptionWorker | None = None
         self._voice_result: dict | None = None
         self._voice_model: str | None = None
+        self._voice_reply_conversation: str | None = None
+        self._pending_speech: tuple[str, str] | None = None
+        from jarvis.voice.tts import LocalSpeechOutput
+        self._speech = LocalSpeechOutput(self)
+        self._speech.stateChanged.connect(self._on_speech_state)
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -837,6 +842,7 @@ class JarvisBridge(QObject):
             or self._mutation_thread is not None
             or self._voice_thread is not None
             or self._voice_capture.active
+            or self._speech.speaking
         )
 
     @Slot(result=str)
@@ -1044,13 +1050,50 @@ class JarvisBridge(QObject):
         result = json.loads(
             self.sendConversationalMessage(conversation_id, text.strip(), model)
         )
-        if not result.get("ok"):
+        if result.get("ok"):
+            self._voice_reply_conversation = conversation_id
+        else:
             self.streamEvent.emit(_json({
                 "type": "voice_state",
                 "state": "ERROR",
                 "conversationId": conversation_id,
                 "error": result.get("error", "DISPATCH_FAILED"),
             }))
+
+    @Slot(result=str)
+    def stopSpeech(self) -> str:
+        """Stop only audible playback; never cancel conversation or external work."""
+        if not self._speech.speaking:
+            return _json({"ok": False, "error": "speech_not_active"})
+        self._speech.stop()
+        return _json({"ok": True})
+
+    @Slot(str)
+    def _on_speech_state(self, state: str) -> None:
+        conversation_id = (
+            self._pending_speech[0] if self._pending_speech is not None
+            else self._voice_reply_conversation
+        )
+        if state == "ERROR":
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "IDLE",
+                "conversationId": conversation_id,
+                "warning": "SYNTHESIS_FAILED",
+            }))
+            self._pending_speech = None
+            self._voice_reply_conversation = None
+            return
+        self.streamEvent.emit(_json({
+            "type": "voice_state",
+            "state": state,
+            "conversationId": conversation_id,
+        }))
+        if state == "IDLE":
+            self._pending_speech = None
+            self._voice_reply_conversation = None
+            if self._closing and self._window is not None and not self.active:
+                QTimer.singleShot(0, self._window.close)
 
     @Slot(str, str, str, result=str)
     def sendConversationalMessage(
@@ -1504,6 +1547,25 @@ class JarvisBridge(QObject):
     def _on_done(self, conversation_id: str, result: str, error_code: str,
                  memory_status: str) -> None:
         trace("bridge_worker_done_received", result=result, error_class=error_code)
+        if (result == "completed"
+                and conversation_id == self._voice_reply_conversation):
+            try:
+                messages = self._store.list_messages(conversation_id)
+                spoken = next(
+                    (
+                        item.get("content", "")
+                        for item in reversed(messages)
+                        if item.get("role") == "assistant"
+                        and item.get("status") == "completed"
+                        and isinstance(item.get("content"), str)
+                        and item.get("content").strip()
+                    ),
+                    "",
+                )
+                if spoken:
+                    self._pending_speech = (conversation_id, spoken.strip())
+            except Exception as exc:
+                trace("voice_speech_prepare_failed", error_class=type(exc).__name__)
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
@@ -1537,6 +1599,18 @@ class JarvisBridge(QObject):
                 self.streamEvent.emit(_json(pending))
             else:
                 self._create_gate.clear()
+        speech = self._pending_speech
+        if speech is not None and not self._closing:
+            conversation_id, text = speech
+            if not self._speech.say(text):
+                self.streamEvent.emit(_json({
+                    "type": "voice_state",
+                    "state": "IDLE",
+                    "conversationId": conversation_id,
+                    "warning": "SYNTHESIS_UNAVAILABLE",
+                }))
+                self._pending_speech = None
+                self._voice_reply_conversation = None
         if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
@@ -1550,6 +1624,10 @@ class JarvisBridge(QObject):
         self._closing = True
         if self._voice_capture.active:
             self._voice_capture.cancel()
+        if self._speech.speaking:
+            self._speech.stop()
+        self._pending_speech = None
+        self._voice_reply_conversation = None
         if self._worker is not None:
             self._worker.cancelled.set()
         if (self._voice_thread is None and self._window is not None
