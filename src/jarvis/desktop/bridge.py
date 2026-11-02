@@ -916,38 +916,46 @@ class JarvisBridge(QObject):
             trace("openai_connection_bootstrap_failed",
                   error_class=type(exc).__name__)
 
+        connections = manager.list_connections()
         selection = load_ai_selection()
         selected_connection = None
         selected_model = ""
         if selection is not None:
-            try:
-                candidate = manager.store.get(selection["connection_id"])
-                if (candidate is not None
-                        and candidate["provider_id"] == selection["provider_id"]):
-                    public, _ = manager.resolve_ai_connection(
-                        provider_id=selection["provider_id"],
-                        connection_id=selection["connection_id"],
-                    )
-                    selected_connection = public
-                    selected_model = selection["models"].get(
-                        selection["provider_id"], "",
-                    )
-            except Exception:
-                selected_connection = None
+            selected_connection = next(
+                (
+                    item for item in connections
+                    if item["id"] == selection["connection_id"]
+                    and item["provider_id"] == selection["provider_id"]
+                ),
+                None,
+            )
+            if selected_connection is not None:
+                selected_model = selection["models"].get(
+                    selection["provider_id"], "",
+                )
 
-        if selected_connection is None and openai_connection is not None:
-            self._active_ai_provider = "openai"
-            self._active_ai_connection_id = openai_connection["id"]
+        if selected_connection is None and selection is None and openai_connection is not None:
             selected_connection = openai_connection
             selected_model = bootstrap_model()
-        elif selected_connection is not None:
+
+        if selected_connection is not None:
             self._active_ai_provider = selected_connection["provider_id"]
             self._active_ai_connection_id = selected_connection["id"]
             if not selected_model and self._active_ai_provider == "openai":
                 selected_model = bootstrap_model()
+        elif selection is not None:
+            # Preserve an explicit but currently invalid selection. Do not
+            # silently rotate to another provider during bootstrap.
+            self._active_ai_provider = selection["provider_id"]
+            self._active_ai_connection_id = selection["connection_id"]
+            selected_model = selection["models"].get(
+                selection["provider_id"], "",
+            )
         else:
             self._active_ai_provider = "openai"
-            self._active_ai_connection_id = None
+            self._active_ai_connection_id = (
+                openai_connection["id"] if openai_connection else None
+            )
             selected_model = bootstrap_model()
 
         from jarvis.memory.connection import configured_memory_url
@@ -958,7 +966,6 @@ class JarvisBridge(QObject):
         except Exception:
             memory_configured = False
 
-        connections = manager.list_connections()
         return _json({
             "ok": True,
             "memoryConfigured": memory_configured,
@@ -968,13 +975,8 @@ class JarvisBridge(QObject):
                 selected_connection and selected_connection.get("configured")
                 and selected_connection.get("enabled")
             ),
-            "aiProvider": (
-                selected_connection.get("provider_id")
-                if selected_connection else self._active_ai_provider
-            ),
-            "aiConnectionId": (
-                selected_connection.get("id") if selected_connection else None
-            ),
+            "aiProvider": self._active_ai_provider,
+            "aiConnectionId": self._active_ai_connection_id,
             "aiConnections": [
                 item for item in connections
                 if item.get("provider_type") == "ai_inference"
