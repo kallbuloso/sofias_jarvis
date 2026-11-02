@@ -1142,3 +1142,41 @@ Decision enacted:
 
 Next gate: full regression, frontend production build and Windows desktop smoke.
 
+## 31. TB-04D1/D2 implementation checkpoint — 2026-11-02
+
+Implementation started for the deterministic inference-policy layer after the
+LiteLLM transport parity gate passed.
+
+Implemented in this checkpoint:
+
+- SQLite schema advanced to v7;
+- durable `inference_profiles` table;
+- durable `inference_bindings` table;
+- supported binding scope vocabulary:
+  - `global`;
+  - `project`;
+  - `conversation`;
+  - `agent`;
+  - `task`;
+- global scope has canonical identity `scope_id="*"`, preventing competing
+  global bindings;
+- new `InferenceProfileStore` owns non-secret profile/binding persistence;
+- profiles may reference only registered `ai_inference` Connections;
+- profile configuration stores `connection_id + model + requirements +
+  constraints`, never provider credentials;
+- initial `general` profile requirements:
+  - streaming=true;
+  - structured_output=true;
+- initial `general` constraint:
+  - locality=cloud_allowed;
+- desktop bootstrap materializes `general` and its global binding from the
+  existing effective Provider/Connection/Model selection only when the profile
+  does not yet exist;
+- the bootstrap migration is idempotent and does not overwrite an existing
+  `general` profile when the current manual selection later changes;
+- this checkpoint does **not** change the inference execution path yet;
+- manual Provider/Connection/Model remains the active runtime source until the
+  InferenceResolver integration phase.
+
+Focused regression is required before proceeding to resolver integration.
+
