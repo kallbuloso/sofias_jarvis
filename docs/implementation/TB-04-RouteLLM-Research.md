@@ -1,6 +1,6 @@
 # JARVIS — RouteLLM / Dynamic Model Routing Research
 
-**Status:** RESEARCH ONLY — does not modify the approved LiteLLM transition SPEC  
+**Status:** DISCARDED — no implementation planned  
 **Date:** 2026-11-02  
 **Scope:** assess whether RouteLLM should enter TB-04 now or later as a cost/quality optimization.
 
@@ -297,3 +297,12 @@ Treat **dynamic routing as a policy optimization after the provider abstraction*
 Freeze the current approved SPEC and do not add LMSYS RouteLLM as a required dependency.
 
 Design the future `InferenceResolver` so RouteLLM, LiteLLM Auto Router, or a JARVIS-native classifier can be swapped as a model-selection strategy without changing Agents, Projects, Tasks, Connections or CONTRACT-04.
+
+## Final owner decision — 2026-11-02
+
+RouteLLM was explicitly discarded by the owner.
+
+It is not a dependency, roadmap requirement, fallback mechanism or planned `ModelSelectionStrategy` for the current JARVIS architecture.
+
+Future dynamic routing remains an independent architectural concern and may be revisited using LiteLLM-native routing or another deliberately evaluated strategy, but this research document does not authorize RouteLLM implementation.
+
