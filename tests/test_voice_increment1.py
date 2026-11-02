@@ -61,3 +61,18 @@ def test_desktop_push_to_talk_contract_uses_press_release_and_canonical_bridge()
     bridge = Path("src/jarvis/desktop/bridge.py").read_text(encoding="utf-8")
     assert '"type": "voice_transcript"' in bridge
     assert "self.sendConversationalMessage(conversation_id, text.strip(), model)" in bridge
+
+def test_voice_stt_start_is_deferred_past_audio_teardown():
+    bridge = Path("src/jarvis/desktop/bridge.py").read_text(encoding="utf-8")
+    assert "QTimer.singleShot(0, self._start_voice_transcription_thread)" in bridge
+    assert "voice_capture_stop_end" in bridge
+    assert "voice_transcription_thread_scheduled" in bridge
+
+
+def test_desktop_diagnostics_can_capture_native_faults():
+    diagnostics = Path("src/jarvis/desktop/diagnostics.py").read_text(
+        encoding="utf-8"
+    )
+    assert "faulthandler.enable" in diagnostics
+    assert "desktop-faulthandler.log" in diagnostics
+
