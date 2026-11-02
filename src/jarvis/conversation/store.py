@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import UUID, uuid4
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def _now() -> str:
@@ -152,6 +152,35 @@ class SQLiteConversationStore:
                     )
                 """)
                 db.execute("PRAGMA user_version = 5")
+                version = 5
+            if version == 5:
+                db.execute("""
+                    CREATE TABLE integration_connections (
+                        id TEXT PRIMARY KEY,
+                        provider_id TEXT NOT NULL,
+                        display_identity TEXT,
+                        external_account_ref TEXT,
+                        credential_ref TEXT NOT NULL UNIQUE,
+                        configuration_json TEXT NOT NULL DEFAULT '{}',
+                        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+                        observed_permissions_json TEXT NOT NULL DEFAULT '[]',
+                        availability TEXT NOT NULL DEFAULT 'unknown' CHECK (
+                            availability IN (
+                                'unknown','available','unavailable',
+                                'auth_required','permission_insufficient','error'
+                            )
+                        ),
+                        last_error_code TEXT,
+                        last_verified_at TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("""
+                    CREATE INDEX idx_integration_connections_provider
+                    ON integration_connections(provider_id, enabled, updated_at)
+                """)
+                db.execute("PRAGMA user_version = 6")
 
     def create_conversation(self, title: str = "Nova conversa") -> str:
         title = title.strip() or "Nova conversa"
