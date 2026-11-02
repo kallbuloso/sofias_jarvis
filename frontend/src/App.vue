@@ -31,6 +31,12 @@ const voiceState = ref('IDLE')
 const voiceConversation = ref('')
 const voiceStarting = ref(false)
 const voiceReleasePending = ref(false)
+const integrationsDialog = ref(false)
+const integrationProviders = ref([])
+const integrationConnections = ref([])
+const integrationBusy = ref(false)
+const githubLabel = ref('')
+const githubToken = ref('')
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
 function inlineParts(value) {
@@ -145,6 +151,17 @@ async function scrollToBottom() {
 function handleStream(raw) {
   let event
   try { event = JSON.parse(raw) } catch { return }
+  if (event.type === 'integration_connection') {
+    integrationBusy.value = false
+    githubToken.value = ''
+    if (!event.ok) {
+      warning.value = 'Falha na conexão: ' + (event.error || 'unknown')
+    } else {
+      warning.value = ''
+    }
+    refreshIntegrations().catch(() => {})
+    return
+  }
   if (event.type === 'voice_state') {
     voiceState.value = event.state || 'IDLE'
     if (event.conversationId) voiceConversation.value = event.conversationId
@@ -421,6 +438,101 @@ async function confirmMemoryMutation() {
   }
 }
 
+async function refreshIntegrations() {
+  const [providers, connections] = await Promise.all([
+    call('listIntegrationProviders'),
+    call('listIntegrationConnections'),
+  ])
+  if (!providers.ok || !connections.ok) {
+    throw new Error('integrations_unavailable')
+  }
+  integrationProviders.value = providers.items || []
+  integrationConnections.value = connections.items || []
+}
+
+async function openIntegrations() {
+  if (integrationBusy.value) return
+  integrationsDialog.value = true
+  warning.value = ''
+  try {
+    await refreshIntegrations()
+  } catch {
+    warning.value = 'Não foi possível carregar as integrações.'
+  }
+}
+
+async function configureGitHub() {
+  if (integrationBusy.value || !githubToken.value.trim()) return
+  integrationBusy.value = true
+  warning.value = ''
+  const token = githubToken.value
+  try {
+    const result = await call(
+      'configureGitHubConnection', githubLabel.value.trim(), token,
+    )
+    // The UI never keeps a stored credential for later display/reuse.
+    githubToken.value = ''
+    if (!result.ok) {
+      integrationBusy.value = false
+      warning.value = 'Configuração recusada: ' + (result.error || 'unknown')
+    }
+  } catch {
+    githubToken.value = ''
+    integrationBusy.value = false
+    warning.value = 'Não foi possível entregar a credencial ao Core.'
+  }
+}
+
+async function checkIntegration(connectionId) {
+  if (integrationBusy.value) return
+  integrationBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call('checkIntegrationConnection', connectionId)
+    if (!result.ok) {
+      integrationBusy.value = false
+      warning.value = 'Verificação recusada: ' + (result.error || 'unknown')
+    }
+  } catch {
+    integrationBusy.value = false
+    warning.value = 'Não foi possível verificar a conexão.'
+  }
+}
+
+async function toggleIntegration(connection) {
+  if (integrationBusy.value) return
+  integrationBusy.value = true
+  try {
+    const result = await call(
+      'setIntegrationConnectionEnabled', connection.id, !connection.enabled,
+    )
+    if (!result.ok) {
+      warning.value = 'Não foi possível alterar a conexão: ' + (result.error || 'unknown')
+    }
+    await refreshIntegrations()
+  } catch {
+    warning.value = 'Falha ao alterar a conexão.'
+  } finally {
+    integrationBusy.value = false
+  }
+}
+
+async function removeIntegration(connection) {
+  if (integrationBusy.value) return
+  integrationBusy.value = true
+  try {
+    const result = await call('removeIntegrationConnection', connection.id)
+    if (!result.ok) {
+      warning.value = 'Não foi possível remover a conexão: ' + (result.error || 'unknown')
+    }
+    await refreshIntegrations()
+  } catch {
+    warning.value = 'Falha ao remover a conexão.'
+  } finally {
+    integrationBusy.value = false
+  }
+}
+
 async function startVoice(event) {
   if (!ready.value || busy.value || voiceStarting.value ||
       voiceState.value !== 'IDLE' || memoryPreviewBusy.value ||
@@ -611,7 +723,11 @@ onMounted(async () => {
             </template>
           </v-list-item>
         </v-list>
-        <div class="sidebar-footer">Operação local · Windows</div>
+        <div class="sidebar-footer">
+          <v-btn block variant="text" size="small" :disabled="integrationBusy"
+            @click="openIntegrations">Integrações</v-btn>
+          <div>Operação local · Windows</div>
+        </div>
       </v-navigation-drawer>
       <v-main>
         <div class="main-column">
@@ -714,6 +830,74 @@ onMounted(async () => {
         </div>
       </v-main>
     </v-layout>
+    <v-dialog v-model="integrationsDialog" max-width="760">
+      <v-card title="Integrações">
+        <v-card-text>
+          <div class="integration-section">
+            <div class="heading">GitHub</div>
+            <div class="small-text">
+              Fine-grained PAT · a credencial será armazenada somente no Windows Credential Manager.
+            </div>
+            <v-text-field v-model="githubLabel" label="Identificação opcional"
+              variant="outlined" density="compact" class="mt-4"/>
+            <v-text-field v-model="githubToken" label="Fine-grained personal access token"
+              type="password" autocomplete="off" variant="outlined" density="compact"/>
+            <v-btn color="primary" :loading="integrationBusy"
+              :disabled="integrationBusy || !githubToken.trim()"
+              @click="configureGitHub">Conectar GitHub</v-btn>
+          </div>
+
+          <v-divider class="my-5"/>
+
+          <div v-if="!integrationConnections.length" class="small-text">
+            Nenhuma conexão externa configurada.
+          </div>
+          <v-card v-for="connection in integrationConnections" :key="connection.id"
+            variant="outlined" class="mb-3">
+            <v-card-text>
+              <div class="integration-row">
+                <div>
+                  <strong>{{ connection.provider_id === 'github' ? 'GitHub' : connection.provider_id }}</strong>
+                  <div>
+                    {{ connection.display_identity ||
+                      connection.configuration?.label || 'Identidade ainda não verificada' }}
+                  </div>
+                  <div class="small-text">
+                    configurada: {{ connection.configured ? 'sim' : 'não' }} ·
+                    habilitada: {{ connection.enabled ? 'sim' : 'não' }} ·
+                    disponibilidade: {{ connection.availability }}
+                  </div>
+                  <div v-if="connection.last_error_code" class="small-text">
+                    último erro: {{ connection.last_error_code }}
+                  </div>
+                  <div v-if="connection.observed_permissions?.length" class="small-text">
+                    permissões observadas: {{ connection.observed_permissions.join(', ') }}
+                  </div>
+                </div>
+                <div class="integration-actions">
+                  <v-btn size="small" variant="text" :disabled="integrationBusy"
+                    @click="checkIntegration(connection.id)">Verificar</v-btn>
+                  <v-btn size="small" variant="text" :disabled="integrationBusy"
+                    @click="toggleIntegration(connection)">
+                    {{ connection.enabled ? 'Desabilitar' : 'Habilitar' }}
+                  </v-btn>
+                  <v-btn size="small" variant="text" color="error"
+                    :disabled="integrationBusy" @click="removeIntegration(connection)">
+                    Remover
+                  </v-btn>
+                </div>
+              </div>
+            </v-card-text>
+          </v-card>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn variant="text" :disabled="integrationBusy"
+            @click="integrationsDialog = false">Fechar</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog :model-value="Boolean(deletionTarget)" max-width="480" persistent>
       <v-card title="Excluir conversa?">
         <v-card-text>
@@ -845,6 +1029,9 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
+.integration-section { padding: 4px 0; }
+.integration-row { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
+.integration-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 </style>
 
 <style scoped>
