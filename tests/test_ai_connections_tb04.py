@@ -118,11 +118,11 @@ def test_inference_factory_supports_openai_without_leaking_sdk_to_core(monkeypat
         "openai",
         SimpleNamespace(OpenAI=Client),
     )
-    provider = build_inference_provider("openai", "PRIVATE")
+    provider = build_inference_provider("openai", "PRIVATE", backend="native")
     assert isinstance(provider, OpenAIResponsesAdapter)
     assert created == [{"api_key": "PRIVATE", "timeout": 30.0}]
 
 
 def test_inference_factory_rejects_unknown_provider():
     with pytest.raises(Exception, match="AI_PROVIDER_UNSUPPORTED"):
-        build_inference_provider("not-real", "PRIVATE")
+        build_inference_provider("not-real", "PRIVATE", backend="native")
