@@ -249,6 +249,11 @@ class SQLiteConversationStore:
         except (TypeError, ValueError, AttributeError):
             return False
         with self._connection() as db:
+            db.execute(
+                "DELETE FROM inference_bindings "
+                "WHERE scope_type='conversation' AND scope_id=?",
+                (conversation_id,),
+            )
             removed = db.execute(
                 "DELETE FROM conversations WHERE id=?", (conversation_id,),
             )
