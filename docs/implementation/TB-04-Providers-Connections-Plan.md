@@ -391,3 +391,23 @@ passed per call and model identifiers use `provider/model`. The SDK is not
 thread-safe for process-global settings, therefore JARVIS does not use global
 LiteLLM API-key state for connection routing.
 
+## TB-04C owner validation — 2026-11-02
+
+Real owner smoke passed for both OpenAI and Anthropic through the LiteLLM
+backend.
+
+The inference factory default has therefore moved from `native` to
+`litellm`.
+
+Rollback remains explicit:
+
+```text
+JARVIS_INFERENCE_BACKEND=native
+```
+
+No environment override means LiteLLM.
+
+TB-04C is functionally accepted at provider-parity level. Full regression,
+frontend production build and final Windows desktop smoke remain the gate before
+advancing implementation to TB-04D InferenceProfile / InferenceResolver.
+
