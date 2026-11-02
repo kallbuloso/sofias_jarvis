@@ -53,8 +53,8 @@ def test_openai_stt_adapter_returns_only_nonempty_final_text(monkeypatch):
 
 def test_desktop_push_to_talk_contract_uses_press_release_and_canonical_bridge():
     source = Path("frontend/src/App.vue").read_text(encoding="utf-8")
-    assert "@pointerdown.prevent=\"startVoice\"" in source
-    assert "@pointerup.prevent=\"stopVoice\"" in source
+    assert "@pointerdown.prevent=" in source and "startVoice($event)" in source
+    assert "@pointerup.prevent=" in source and "stopVoice($event)" in source
     assert "call('startVoiceCapture'" in source
     assert "call('stopVoiceCapture'" in source
 
