@@ -5,11 +5,8 @@ import sqlite3
 
 import pytest
 
-pytest.importorskip("PySide6")
-
 from jarvis.connections.store import ConnectionStore
 from jarvis.conversation.store import SQLiteConversationStore
-from jarvis.desktop.bridge import JarvisBridge
 from jarvis.inference.profiles import InferenceProfileStore
 from jarvis.secrets.windows import WindowsCredentialStore
 
@@ -145,6 +142,9 @@ def test_profile_persistence_never_contains_provider_secret(tmp_path):
 def test_desktop_bootstrap_materializes_general_from_existing_selection(
     tmp_path, monkeypatch,
 ):
+    pytest.importorskip("PySide6")
+    from jarvis.desktop.bridge import JarvisBridge
+
     monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("JARVIS_MODEL", "gpt-6-luna")
     monkeypatch.setattr(
