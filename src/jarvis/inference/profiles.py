@@ -250,6 +250,51 @@ class InferenceProfileStore:
             ).fetchone()
         return self._decode_binding(row) if row else None
 
+    def update_primary(
+        self, profile_id: str, *, connection_id: str, model: str,
+    ) -> dict:
+        profile_id = _uuid(profile_id)
+        connection_id = _uuid(connection_id)
+        model = _model(model)
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT configuration_json FROM inference_profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("inference_profile_not_found")
+            connection = db.execute(
+                "SELECT provider_id FROM integration_connections WHERE id=?",
+                (connection_id,),
+            ).fetchone()
+            if connection is None:
+                raise ValueError("inference_profile_connection_not_found")
+            descriptor = ProviderRegistry().get(connection["provider_id"])
+            if descriptor is None or descriptor.provider_type != "ai_inference":
+                raise ValueError("inference_profile_requires_ai_connection")
+            configuration = json.loads(row["configuration_json"])
+            configuration["primary"] = {
+                "connection_id": connection_id,
+                "model": model,
+            }
+            now = _now()
+            db.execute(
+                """UPDATE inference_profiles
+                   SET configuration_json=?,updated_at=?
+                   WHERE id=?""",
+                (
+                    json.dumps(
+                        configuration,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    now,
+                    profile_id,
+                ),
+            )
+        return self.get_profile(profile_id)
+
     def set_profile_enabled(self, profile_id: str, enabled: bool) -> dict:
         profile_id = _uuid(profile_id)
         now = _now()
