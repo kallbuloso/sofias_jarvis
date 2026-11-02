@@ -12,13 +12,13 @@
 | **Baseline** | Fases 01–07 aprovadas; ADR-0001 a ADR-0006 ACCEPTED |
 | **Próxima atividade** | TB-04 Increment 1B: OpenAI como AI Connection real, removendo dependência hardcoded da composição de inferência sem mudar o comportamento funcional |
 
-> **Fidelidade:** este documento consolida somente o roadmap, o TB-01 e as decisões complementares expressamente aprovados. TB-02 está **aprovado e em execução** após confirmação do contrato da instância real; TB-03 a TB-08 continuam somente como roadmap, sem autorização de implementação. Tecnologias candidatas continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
+> **Fidelidade:** este documento preserva o roadmap e o histórico de execução. TB-01, TB-02 e TB-03 estão PRODUCT DONE; TB-04 está APPROVED / IN PROGRESS; TB-05 a TB-08 permanecem roadmap sem autorização implícita de implementação. Tecnologias futuras continuam condicionadas às validações da Architecture. O JARVIS é independente do Sofia's Assistant; Sofias Memory é serviço independente, não banco operacional nem executor.
 
 ## 1. Roadmap inicial do MVP
 
 | Slice | Entrega utilizável esperada | Estado de planejamento |
 |---|---|---|
-| **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **APPROVED** (plano abaixo) |
+| **TB-01 — Primeira conversa funcional** | Desktop inicia; chat real com IA em streaming; histórico reabre após restart | **PRODUCT DONE (2026-10-31)** — validação em `docs/implementation/TB-01-Validation.md` |
 | **TB-02 — Memória e conhecimento** | Integração com Sofias Memory, recall/knowledge e proveniência | **PRODUCT DONE (2026-11-01)** — validação final em `docs/implementation/TB-02-Validation.md` |
 | **TB-03 — Conversação por voz** | Texto e voz compartilham conversa; controle de áudio e interrupção | **PRODUCT DONE (2026-11-02)** — validação final em `docs/implementation/TB-03-Validation.md` |
 | **TB-04 — Providers e conexões** | Configuração de contas, capabilities, disponibilidade e permissões | **APPROVED / IN PROGRESS** — plano em `docs/implementation/TB-04-Providers-Connections-Plan.md` |
