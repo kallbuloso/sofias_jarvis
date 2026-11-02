@@ -210,9 +210,22 @@ function handleStream(raw) {
           : 'Verificação concluída: ' + connection.availability +
             (connection.last_error_code
               ? ' · ' + connection.last_error_code : '')
-        if (connection.id === aiConnectionId.value &&
-            connection.availability !== 'available') {
-          credentialConfigured.value = false
+        if (connection.id === aiConnectionId.value) {
+          if (connection.availability !== 'available') {
+            credentialConfigured.value = false
+          } else if (Array.isArray(connection.available_models) &&
+                     connection.available_models.length) {
+            const models = connection.available_models
+              .map(item => item?.id)
+              .filter(Boolean)
+            if (models.length && !models.includes(model.value)) {
+              model.value = models[0]
+              aiModelPreferences.value = {
+                ...aiModelPreferences.value,
+                [connection.provider_id]: models[0],
+              }
+            }
+          }
         }
       }
     }
