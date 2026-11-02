@@ -260,3 +260,19 @@ Focused regression additions:
 
 Real Windows validation is still pending.
 
+## Increment 1B human acceptance — 2026-11-02
+
+Owner validated the OpenAI AI Connection refactor on Windows:
+
+- focused regression requested for the AI Connection boundary: PASS;
+- frontend production build: PASS;
+- OpenAI AI Provider visible/configured/enabled in the desktop: PASS;
+- normal conversation after migration: PASS;
+- disabling OpenAI blocks dependent inference in a controlled way: PASS;
+- re-enabling OpenAI restores inference: PASS;
+- restart preserves the connection/state: PASS.
+
+**Increment 1B = ACCEPTED.**
+
+The next implementation target is **Increment 2 — Anthropic as the second real AI Provider**, followed by explicit Provider/Connection/Model rotation in the same Conversation.
+
