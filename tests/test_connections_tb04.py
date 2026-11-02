@@ -47,14 +47,14 @@ class FakeGitHub:
         }
 
 
-def test_schema_v6_adds_connections_without_losing_existing_history(tmp_path):
+def test_current_schema_keeps_connections_without_losing_existing_history(tmp_path):
     path = tmp_path / "jarvis.sqlite3"
     store = SQLiteConversationStore(path)
     cid = store.create_conversation("Antes do TB-04")
     store.append_user_message(cid, "mensagem existente")
 
     with sqlite3.connect(path) as raw:
-        assert raw.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == 7
         assert raw.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name='integration_connections'"
