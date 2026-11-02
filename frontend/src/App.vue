@@ -148,6 +148,10 @@ function handleStream(raw) {
   if (event.type === 'voice_state') {
     voiceState.value = event.state || 'IDLE'
     if (event.conversationId) voiceConversation.value = event.conversationId
+    if (event.warning === 'SYNTHESIS_FAILED' ||
+        event.warning === 'SYNTHESIS_UNAVAILABLE') {
+      warning.value = 'A resposta textual foi preservada, mas a voz não pôde ser reproduzida.'
+    }
     if (event.state === 'ERROR') {
       const messages = {
         INPUT_DEVICE_UNAVAILABLE: 'Microfone indisponível.',
@@ -267,7 +271,8 @@ function handleStream(raw) {
   }
   if (event.type === 'done') {
     busy.value = false
-    if (event.conversationId === voiceConversation.value) {
+    // A voice-origin turn remains PROCESSING until TTS starts or reports unavailable.
+    if (event.conversationId === voiceConversation.value && event.status !== 'completed') {
       voiceState.value = 'IDLE'
       voiceConversation.value = ''
     }
@@ -479,6 +484,18 @@ async function stopVoice(event) {
   }
 }
 
+async function stopSpeech() {
+  if (voiceState.value !== 'SPEAKING') return
+  try {
+    const result = await call('stopSpeech')
+    if (!result.ok && result.error !== 'speech_not_active') {
+      warning.value = 'Não foi possível interromper a reprodução de voz.'
+    }
+  } catch {
+    warning.value = 'Falha ao interromper a reprodução de voz.'
+  }
+}
+
 async function sendMessage() {
   const text = draft.value.trim()
   if (!ready.value || busy.value || memoryPreviewBusy.value ||
@@ -676,15 +693,18 @@ onMounted(async () => {
             <v-btn
               variant="outlined"
               size="large"
-              :color="voiceState === 'LISTENING' ? 'error' : 'primary'"
+              :color="voiceState === 'LISTENING' || voiceState === 'SPEAKING' ? 'error' : 'primary'"
               :disabled="!ready || busy || memoryPreviewBusy || memoryMutationBusy ||
-                createDialog || createBusy || (voiceState !== 'IDLE' && voiceState !== 'LISTENING')"
-              @pointerdown.prevent="startVoice"
-              @pointerup.prevent="stopVoice"
-              @pointercancel.prevent="stopVoice">
+                createDialog || createBusy ||
+                !['IDLE', 'LISTENING', 'SPEAKING'].includes(voiceState)"
+              @pointerdown.prevent="voiceState === 'SPEAKING' ? null : startVoice($event)"
+              @pointerup.prevent="voiceState === 'SPEAKING' ? null : stopVoice($event)"
+              @pointercancel.prevent="voiceState === 'SPEAKING' ? null : stopVoice($event)"
+              @click="stopSpeech">
               {{ voiceState === 'LISTENING' ? 'Ouvindo…' :
                  voiceState === 'TRANSCRIBING' ? 'Transcrevendo…' :
-                 voiceState === 'PROCESSING' ? 'Processando…' : 'Falar' }}
+                 voiceState === 'PROCESSING' ? 'Processando…' :
+                 voiceState === 'SPEAKING' ? 'Parar voz' : 'Falar' }}
             </v-btn>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
                :disabled="!ready || !draft.trim() || busy || voiceState !== 'IDLE' ||
