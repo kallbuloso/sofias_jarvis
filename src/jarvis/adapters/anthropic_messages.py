@@ -16,6 +16,18 @@ class AnthropicProviderResponseError(RuntimeError):
 
 def _api_error_code(exc: Exception) -> str:
     status = getattr(exc, "status_code", None)
+    body = getattr(exc, "body", None)
+    error_type = None
+    if isinstance(body, dict):
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            error_type = nested.get("type")
+    message = str(exc).lower()
+    if (status == 402 or error_type == "billing_error"
+            or "credit balance" in message
+            or "spend limit" in message
+            or "billing" in message):
+        return "BILLING_UNAVAILABLE"
     if status == 400:
         return "PROVIDER_REQUEST_INVALID"
     if status == 401:
