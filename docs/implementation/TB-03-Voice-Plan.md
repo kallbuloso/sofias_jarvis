@@ -1,7 +1,7 @@
 # JARVIS — TB-03 Voice Conversation Plan
 
 **Slice:** TB-03 — Conversação por voz  
-**Status:** APPROVED / IN PROGRESS  
+**Status:** PRODUCT DONE — validated by owner  
 **Branch:** `feat/tb-03-voice-conversation`  
 **Baseline:** SPEC-07 + CONTRACT-05 + ARCH-04/05/06, já aprovados
 
@@ -160,4 +160,17 @@ Owner validated on Windows:
 **Functional voice vertical: PASS.**
 
 Remaining Product Done gate: one final full pytest regression and one production frontend build on the owner Windows environment.
+
+## Product Done checkpoint — 2026-11-02
+
+Final owner validation completed after the Increment 2 smoke:
+
+- focused voice tests: `8 passed in 0.22s`;
+- full pytest regression: PASS;
+- frontend production build: PASS;
+- end-to-end Windows voice flow: PASS.
+
+Consolidated completion evidence: `docs/implementation/TB-03-Validation.md`.
+
+**TB-03 = PRODUCT DONE.**
 
