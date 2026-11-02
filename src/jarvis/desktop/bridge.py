@@ -763,6 +763,42 @@ class ConversationalCreateWorker(QObject):
         self.finishedMutation.emit(_json(payload))
 
 
+class VoiceTranscriptionWorker(QObject):
+    """Transcribe one completed push-to-talk turn off the GUI thread."""
+
+    finishedTranscription = Signal(str)
+
+    def __init__(self, conversation_id: str, wav_bytes: bytes, api_key: str):
+        super().__init__()
+        self.conversation_id = conversation_id
+        self.wav_bytes = wav_bytes
+        self.api_key = api_key
+
+    @Slot()
+    def run(self) -> None:
+        trace("voice_transcription_begin")
+        try:
+            from jarvis.voice.openai_adapter import OpenAITranscriptionAdapter
+            text = OpenAITranscriptionAdapter(self.api_key).transcribe(self.wav_bytes)
+            payload = {
+                "ok": True,
+                "conversationId": self.conversation_id,
+                "text": text,
+            }
+        except Exception as exc:
+            trace("voice_transcription_failed", error_class=type(exc).__name__)
+            payload = {
+                "ok": False,
+                "conversationId": self.conversation_id,
+                "error": getattr(exc, "code", "RECOGNITION_FAILED"),
+            }
+        finally:
+            # Drop the largest ephemeral object before the worker leaves its thread.
+            self.wav_bytes = b""
+        trace("voice_transcription_end", ok=bool(payload["ok"]))
+        self.finishedTranscription.emit(_json(payload))
+
+
 class JarvisBridge(QObject):
     streamEvent = Signal(str)
 
@@ -783,14 +819,31 @@ class JarvisBridge(QObject):
         self._pending_forget_conversation: str | None = None
         self._mutation_thread: QThread | None = None
         self._mutation_worker: MemoryMutationWorker | None = None
+        from jarvis.voice.capture import QtPushToTalkCapture
+        self._voice_capture = QtPushToTalkCapture(self)
+        self._voice_thread: QThread | None = None
+        self._voice_worker: VoiceTranscriptionWorker | None = None
+        self._voice_result: dict | None = None
+        self._voice_model: str | None = None
+        self._voice_reply_conversation: str | None = None
+        self._pending_speech: tuple[str, str] | None = None
+        from jarvis.voice.tts import LocalSpeechOutput
+        self._speech = LocalSpeechOutput(self)
+        self._speech.stateChanged.connect(self._on_speech_state)
 
     def attach_window(self, window) -> None:
         self._window = window
 
     @property
     def active(self) -> bool:
-        return (self._thread is not None or self._preview_thread is not None
-                or self._mutation_thread is not None)
+        return (
+            self._thread is not None
+            or self._preview_thread is not None
+            or self._mutation_thread is not None
+            or self._voice_thread is not None
+            or self._voice_capture.active
+            or self._speech.speaking
+        )
 
     @Slot(result=str)
     def bootstrap(self) -> str:
@@ -846,6 +899,201 @@ class JarvisBridge(QObject):
             return _json({"ok": True, "items": self._store.list_messages(conversation_id)})
         except KeyError:
             return _json({"ok": False, "error": "unknown_conversation"})
+
+    @Slot(str, result=str)
+    def startVoiceCapture(self, conversation_id: str) -> str:
+        """Start one push-to-talk turn bound to the current Conversation."""
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            conversation_id = str(UUID(conversation_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_conversation"})
+        if self._store.get_conversation(conversation_id) is None:
+            return _json({"ok": False, "error": "unknown_conversation"})
+        try:
+            self._voice_capture.start(conversation_id)
+        except Exception as exc:
+            code = getattr(exc, "code", "INPUT_DEVICE_UNAVAILABLE")
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "ERROR",
+                "conversationId": conversation_id,
+                "error": code,
+            }))
+            return _json({"ok": False, "error": code})
+        self.streamEvent.emit(_json({
+            "type": "voice_state",
+            "state": "LISTENING",
+            "conversationId": conversation_id,
+        }))
+        trace("voice_capture_started")
+        return _json({"ok": True, "state": "LISTENING",
+                      "conversationId": conversation_id})
+
+    @Slot(str, result=str)
+    def stopVoiceCapture(self, model: str) -> str:
+        """Stop capture and asynchronously produce one final transcript."""
+        if self._closing or self._voice_thread is not None:
+            return _json({"ok": False, "error": "busy"})
+        if not self._voice_capture.active:
+            return _json({"ok": False, "error": "capture_not_active"})
+        if not isinstance(model, str) or not model.strip():
+            self._voice_capture.cancel()
+            return _json({"ok": False, "error": "missing_model"})
+        try:
+            turn = self._voice_capture.stop()
+            key = WindowsCredentialStore().get_openai_key()
+            if not key:
+                raise ValueError("credential_not_configured")
+        except Exception as exc:
+            self._voice_capture.cancel()
+            code = getattr(exc, "code", str(exc) or "RECOGNITION_FAILED")
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "ERROR",
+                "conversationId": getattr(
+                    locals().get("turn", None), "conversation_id", None
+                ),
+                "error": code,
+            }))
+            return _json({"ok": False, "error": code})
+
+        self._voice_result = None
+        self._voice_model = model.strip()
+        worker = VoiceTranscriptionWorker(
+            turn.conversation_id, turn.wav_bytes, key,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        self._voice_worker = worker
+        self._voice_thread = thread
+        thread.started.connect(worker.run)
+        worker.finishedTranscription.connect(self._on_voice_transcription)
+        worker.finishedTranscription.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_voice_thread_finished)
+        self.streamEvent.emit(_json({
+            "type": "voice_state",
+            "state": "TRANSCRIBING",
+            "conversationId": turn.conversation_id,
+        }))
+        trace("voice_transcription_thread_starting")
+        thread.start()
+        return _json({"ok": True, "state": "TRANSCRIBING",
+                      "conversationId": turn.conversation_id})
+
+    @Slot(str)
+    def _on_voice_transcription(self, raw_result: str) -> None:
+        try:
+            payload = json.loads(raw_result)
+        except (ValueError, TypeError):
+            payload = {"ok": False, "error": "RECOGNITION_FAILED"}
+        self._voice_result = payload if isinstance(payload, dict) else {
+            "ok": False, "error": "RECOGNITION_FAILED"
+        }
+
+    @Slot()
+    def _on_voice_thread_finished(self) -> None:
+        trace(
+            "voice_transcription_thread_finished",
+            in_gui_thread=QThread.currentThread() == self.thread(),
+            closing=self._closing,
+        )
+        thread = self._voice_thread
+        if thread is None:
+            return
+        self._voice_thread = None
+        self._voice_worker = None
+        thread.deleteLater()
+        payload = self._voice_result or {
+            "ok": False, "error": "RECOGNITION_FAILED"
+        }
+        model = self._voice_model
+        self._voice_result = None
+        self._voice_model = None
+
+        if self._closing:
+            if self._window is not None and not self.active:
+                QTimer.singleShot(0, self._window.close)
+            return
+
+        conversation_id = payload.get("conversationId")
+        if not payload.get("ok"):
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "ERROR",
+                "conversationId": conversation_id,
+                "error": payload.get("error", "RECOGNITION_FAILED"),
+            }))
+            return
+        text = payload.get("text")
+        if (not isinstance(conversation_id, str)
+                or self._store.get_conversation(conversation_id) is None
+                or not isinstance(text, str) or not text.strip()
+                or not isinstance(model, str) or not model):
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "ERROR",
+                "conversationId": conversation_id,
+                "error": "VOICE_TURN_INVALID",
+            }))
+            return
+
+        self.streamEvent.emit(_json({
+            "type": "voice_transcript",
+            "state": "PROCESSING",
+            "conversationId": conversation_id,
+            "text": text.strip(),
+        }))
+        # This is deliberately the exact same canonical text entry used by TB-02.
+        result = json.loads(
+            self.sendConversationalMessage(conversation_id, text.strip(), model)
+        )
+        if result.get("ok"):
+            self._voice_reply_conversation = conversation_id
+        else:
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "ERROR",
+                "conversationId": conversation_id,
+                "error": result.get("error", "DISPATCH_FAILED"),
+            }))
+
+    @Slot(result=str)
+    def stopSpeech(self) -> str:
+        """Stop only audible playback; never cancel conversation or external work."""
+        if not self._speech.speaking:
+            return _json({"ok": False, "error": "speech_not_active"})
+        self._speech.stop()
+        return _json({"ok": True})
+
+    @Slot(str)
+    def _on_speech_state(self, state: str) -> None:
+        conversation_id = (
+            self._pending_speech[0] if self._pending_speech is not None
+            else self._voice_reply_conversation
+        )
+        if state == "ERROR":
+            self.streamEvent.emit(_json({
+                "type": "voice_state",
+                "state": "IDLE",
+                "conversationId": conversation_id,
+                "warning": "SYNTHESIS_FAILED",
+            }))
+            self._pending_speech = None
+            self._voice_reply_conversation = None
+            return
+        self.streamEvent.emit(_json({
+            "type": "voice_state",
+            "state": state,
+            "conversationId": conversation_id,
+        }))
+        if state == "IDLE":
+            self._pending_speech = None
+            self._voice_reply_conversation = None
+            if self._closing and self._window is not None and not self.active:
+                QTimer.singleShot(0, self._window.close)
 
     @Slot(str, str, str, result=str)
     def sendConversationalMessage(
@@ -1299,6 +1547,25 @@ class JarvisBridge(QObject):
     def _on_done(self, conversation_id: str, result: str, error_code: str,
                  memory_status: str) -> None:
         trace("bridge_worker_done_received", result=result, error_class=error_code)
+        if (result == "completed"
+                and conversation_id == self._voice_reply_conversation):
+            try:
+                messages = self._store.list_messages(conversation_id)
+                spoken = next(
+                    (
+                        item.get("content", "")
+                        for item in reversed(messages)
+                        if item.get("role") == "assistant"
+                        and item.get("status") == "completed"
+                        and isinstance(item.get("content"), str)
+                        and item.get("content").strip()
+                    ),
+                    "",
+                )
+                if spoken:
+                    self._pending_speech = (conversation_id, spoken.strip())
+            except Exception as exc:
+                trace("voice_speech_prepare_failed", error_class=type(exc).__name__)
         self.streamEvent.emit(_json({
             "type": "done", "conversationId": conversation_id,
             "status": result, "error": error_code,
@@ -1332,6 +1599,18 @@ class JarvisBridge(QObject):
                 self.streamEvent.emit(_json(pending))
             else:
                 self._create_gate.clear()
+        speech = self._pending_speech
+        if speech is not None and not self._closing:
+            conversation_id, text = speech
+            if not self._speech.say(text):
+                self.streamEvent.emit(_json({
+                    "type": "voice_state",
+                    "state": "IDLE",
+                    "conversationId": conversation_id,
+                    "warning": "SYNTHESIS_UNAVAILABLE",
+                }))
+                self._pending_speech = None
+                self._voice_reply_conversation = None
         if self._closing and self._window is not None and not self.active:
             QTimer.singleShot(0, self._window.close)
 
@@ -1343,5 +1622,14 @@ class JarvisBridge(QObject):
         trace("bridge_shutdown_requested", worker_active=self.active)
         self._mutation_gate.clear()
         self._closing = True
+        if self._voice_capture.active:
+            self._voice_capture.cancel()
+        if self._speech.speaking:
+            self._speech.stop()
+        self._pending_speech = None
+        self._voice_reply_conversation = None
         if self._worker is not None:
             self._worker.cancelled.set()
+        if (self._voice_thread is None and self._window is not None
+                and not self.active):
+            QTimer.singleShot(0, self._window.close)

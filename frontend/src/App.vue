@@ -27,6 +27,10 @@ const createScope = ref('')
 const createDialog = ref(false)
 const createBusy = ref(false)
 const knowledgeNotice = ref('')
+const voiceState = ref('IDLE')
+const voiceConversation = ref('')
+const voiceStarting = ref(false)
+const voiceReleasePending = ref(false)
 // Render only a small, explicitly supported subset of inline Markdown.
  // Vue interpolations escape all text; no v-html, HTML parser or arbitrary links.
 function inlineParts(value) {
@@ -141,6 +145,36 @@ async function scrollToBottom() {
 function handleStream(raw) {
   let event
   try { event = JSON.parse(raw) } catch { return }
+  if (event.type === 'voice_state') {
+    voiceState.value = event.state || 'IDLE'
+    if (event.conversationId) voiceConversation.value = event.conversationId
+    if (event.warning === 'SYNTHESIS_FAILED' ||
+        event.warning === 'SYNTHESIS_UNAVAILABLE') {
+      warning.value = 'A resposta textual foi preservada, mas a voz não pôde ser reproduzida.'
+    }
+    if (event.state === 'ERROR') {
+      const messages = {
+        INPUT_DEVICE_UNAVAILABLE: 'Microfone indisponível.',
+        UNSUPPORTED_AUDIO_FORMAT: 'Formato do microfone não suportado.',
+        EMPTY_AUDIO: 'Nenhum áudio foi capturado.',
+        RECOGNITION_FAILED: 'Não foi possível reconhecer a fala.',
+      }
+      warning.value = messages[event.error] || 'Falha na entrada por voz.'
+      voiceState.value = 'IDLE'
+      voiceConversation.value = ''
+    }
+    return
+  }
+  if (event.type === 'voice_transcript') {
+    voiceState.value = event.state || 'PROCESSING'
+    voiceConversation.value = event.conversationId || ''
+    if (event.conversationId === selected.value && typeof event.text === 'string') {
+      messages.value.push({ role: 'user', content: event.text, status: 'completed' })
+      messages.value.push({ role: 'assistant', content: '', status: 'streaming' })
+      scrollToBottom()
+    }
+    return
+  }
   if (event.type === 'create_proposal') {
     if (event.ok && event.conversationId === selected.value &&
         event.authorizationToken && typeof event.content === 'string') {
@@ -237,6 +271,11 @@ function handleStream(raw) {
   }
   if (event.type === 'done') {
     busy.value = false
+    // A voice-origin turn remains PROCESSING until TTS starts or reports unavailable.
+    if (event.conversationId === voiceConversation.value && event.status !== 'completed') {
+      voiceState.value = 'IDLE'
+      voiceConversation.value = ''
+    }
     if (event.conversationId === selected.value) {
       const statuses = {
         RESULTS_FOUND: 'Sofias Memory: memórias recuperadas para esta resposta.',
@@ -382,6 +421,81 @@ async function confirmMemoryMutation() {
   }
 }
 
+async function startVoice(event) {
+  if (!ready.value || busy.value || voiceStarting.value ||
+      voiceState.value !== 'IDLE' || memoryPreviewBusy.value ||
+      memoryMutationBusy.value || createDialog.value || createBusy.value) return
+  if (!model.value.trim()) {
+    warning.value = 'Informe o modelo OpenAI antes de usar voz.'
+    return
+  }
+  voiceStarting.value = true
+  voiceReleasePending.value = false
+  warning.value = ''
+  try {
+    event?.currentTarget?.setPointerCapture?.(event.pointerId)
+    let conversationId = selected.value
+    if (!conversationId) {
+      const created = await call('createConversation')
+      if (!created.ok || !created.id) throw new Error('conversation_creation_failed')
+      conversationId = created.id
+      selected.value = conversationId
+      messages.value = []
+      await refreshConversations()
+    }
+    const result = await call('startVoiceCapture', conversationId)
+    if (!result.ok) {
+      warning.value = 'Não foi possível iniciar o microfone: ' + (result.error || 'unknown')
+      voiceState.value = 'IDLE'
+      return
+    }
+    voiceState.value = 'LISTENING'
+    voiceConversation.value = conversationId
+    const releasedWhileStarting = voiceReleasePending.value
+    voiceStarting.value = false
+    if (releasedWhileStarting) await stopVoice()
+  } catch {
+    voiceState.value = 'IDLE'
+    warning.value = 'Não foi possível iniciar a entrada por voz.'
+  } finally {
+    voiceStarting.value = false
+  }
+}
+
+async function stopVoice(event) {
+  try { event?.currentTarget?.releasePointerCapture?.(event.pointerId) } catch {}
+  if (voiceStarting.value) {
+    voiceReleasePending.value = true
+    return
+  }
+  if (voiceState.value !== 'LISTENING') return
+  voiceState.value = 'TRANSCRIBING'
+  try {
+    const result = await call('stopVoiceCapture', model.value.trim())
+    if (!result.ok) {
+      voiceState.value = 'IDLE'
+      voiceConversation.value = ''
+      warning.value = 'Não foi possível transcrever o áudio: ' + (result.error || 'unknown')
+    }
+  } catch {
+    voiceState.value = 'IDLE'
+    voiceConversation.value = ''
+    warning.value = 'Falha ao encerrar a captura de voz.'
+  }
+}
+
+async function stopSpeech() {
+  if (voiceState.value !== 'SPEAKING') return
+  try {
+    const result = await call('stopSpeech')
+    if (!result.ok && result.error !== 'speech_not_active') {
+      warning.value = 'Não foi possível interromper a reprodução de voz.'
+    }
+  } catch {
+    warning.value = 'Falha ao interromper a reprodução de voz.'
+  }
+}
+
 async function sendMessage() {
   const text = draft.value.trim()
   if (!ready.value || busy.value || memoryPreviewBusy.value ||
@@ -478,7 +592,7 @@ onMounted(async () => {
     <v-layout>
       <v-navigation-drawer permanent width="285" color="surface">
         <div class="sidebar-heading">
-          <div class="brand">JARVIS <span>TB-02</span></div>
+          <div class="brand">JARVIS <span>TB-03</span></div>
           <v-btn block color="primary" variant="flat" :disabled="!ready || busy || createBusy || memoryMutationBusy" @click="createConversation">
             Nova conversa
           </v-btn>
@@ -574,11 +688,27 @@ onMounted(async () => {
           <div class="composer">
             <v-textarea v-model="draft" rows="2" auto-grow :max-rows="5"
               variant="outlined" density="comfortable" hide-details
-              label="Mensagem" :disabled="busy || memoryPreviewBusy || memoryMutationBusy || createDialog || createBusy || !ready"
+              label="Mensagem" :disabled="busy || voiceState !== 'IDLE' || memoryPreviewBusy || memoryMutationBusy || createDialog || createBusy || !ready"
               @keydown.ctrl.enter.prevent="sendMessage"/>
+            <v-btn
+              variant="outlined"
+              size="large"
+              :color="voiceState === 'LISTENING' || voiceState === 'SPEAKING' ? 'error' : 'primary'"
+              :disabled="!ready || busy || memoryPreviewBusy || memoryMutationBusy ||
+                createDialog || createBusy ||
+                !['IDLE', 'LISTENING', 'SPEAKING'].includes(voiceState)"
+              @pointerdown.prevent="voiceState === 'SPEAKING' ? null : startVoice($event)"
+              @pointerup.prevent="voiceState === 'SPEAKING' ? null : stopVoice($event)"
+              @pointercancel.prevent="voiceState === 'SPEAKING' ? null : stopVoice($event)"
+              @click="stopSpeech">
+              {{ voiceState === 'LISTENING' ? 'Ouvindo…' :
+                 voiceState === 'TRANSCRIBING' ? 'Transcrevendo…' :
+                 voiceState === 'PROCESSING' ? 'Processando…' :
+                 voiceState === 'SPEAKING' ? 'Parar voz' : 'Falar' }}
+            </v-btn>
             <v-btn color="primary" size="large" :loading="busy || memoryPreviewBusy"
-               :disabled="!ready || !draft.trim() || busy || memoryPreviewBusy || memoryMutationBusy ||
-                createDialog || createBusy"
+               :disabled="!ready || !draft.trim() || busy || voiceState !== 'IDLE' ||
+                memoryPreviewBusy || memoryMutationBusy || createDialog || createBusy"
               @click="sendMessage">Enviar</v-btn>
           </div>
         </div>
