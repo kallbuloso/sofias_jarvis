@@ -40,6 +40,8 @@ const githubLabel = ref('')
 const githubToken = ref('')
 const anthropicLabel = ref('')
 const anthropicToken = ref('')
+const geminiLabel = ref('')
+const geminiToken = ref('')
 const aiProvider = ref('openai')
 const aiConnectionId = ref('')
 const aiModelPreferences = ref({})
@@ -263,6 +265,7 @@ function handleStream(raw) {
     integrationBusy.value = false
     githubToken.value = ''
     anthropicToken.value = ''
+    geminiToken.value = ''
     if (!event.ok) {
       warning.value = 'Falha na conexão: ' + (event.error || 'unknown')
       integrationNotice.value = ''
@@ -442,14 +445,14 @@ function handleStream(raw) {
     }
     if (event.routingStatus === 'UNAVAILABLE' && event.conversationId === selected.value) {
       const routingErrors = {
-        MODEL_NOT_AVAILABLE: 'O modelo selecionado não está disponível nesta conexão Anthropic.',
-        BILLING_UNAVAILABLE: 'A Anthropic aceitou a credencial, mas a conta não está disponível para inferência por cobrança/créditos.',
-        PROVIDER_REQUEST_INVALID: 'A Anthropic recusou a requisição estruturada do roteador.',
-        RATE_LIMITED: 'A Anthropic limitou temporariamente as requisições.',
-        PROVIDER_UNAVAILABLE: 'A Anthropic está temporariamente indisponível.',
-        PROVIDER_TIMEOUT: 'A Anthropic excedeu o tempo de resposta.',
-        PERMISSION_INSUFFICIENT: 'A conexão Anthropic não possui permissão para esta inferência.',
-        AUTHENTICATION_FAILED: 'A autenticação Anthropic falhou durante a inferência.',
+        MODEL_NOT_AVAILABLE: 'O modelo selecionado não está disponível nesta conexão de IA.',
+        BILLING_UNAVAILABLE: 'O provider aceitou a credencial, mas a conta não está disponível para inferência por cobrança/créditos.',
+        PROVIDER_REQUEST_INVALID: 'O provider recusou a requisição estruturada do roteador.',
+        RATE_LIMITED: 'O provider limitou temporariamente as requisições.',
+        PROVIDER_UNAVAILABLE: 'O provider está temporariamente indisponível.',
+        PROVIDER_TIMEOUT: 'O provider excedeu o tempo de resposta.',
+        PERMISSION_INSUFFICIENT: 'A conexão de IA não possui permissão para esta inferência.',
+        AUTHENTICATION_FAILED: 'A autenticação do provider falhou durante a inferência.',
       }
       const base = routingErrors[event.routingError] ||
         ('Roteamento de intenções indisponível' +
@@ -878,6 +881,28 @@ async function configureAnthropic() {
     anthropicToken.value = ''
     integrationBusy.value = false
     warning.value = 'Não foi possível entregar a credencial Anthropic ao Core.'
+  }
+}
+
+async function configureGemini() {
+  if (integrationBusy.value || !geminiToken.value.trim()) return
+  integrationBusy.value = true
+  warning.value = ''
+  const token = geminiToken.value
+  try {
+    const result = await call(
+      'configureAIConnection', 'gemini', geminiLabel.value.trim(), token,
+    )
+    geminiToken.value = ''
+    if (!result.ok) {
+      integrationBusy.value = false
+      warning.value = 'Configuração Gemini recusada: ' +
+        (result.error || 'unknown')
+    }
+  } catch {
+    geminiToken.value = ''
+    integrationBusy.value = false
+    warning.value = 'Não foi possível entregar a credencial Gemini ao Core.'
   }
 }
 
@@ -1355,6 +1380,19 @@ onMounted(async () => {
             <v-btn color="primary" :loading="integrationBusy"
               :disabled="integrationBusy || !anthropicToken.trim()"
               @click="configureAnthropic">Conectar Anthropic</v-btn>
+          </div>
+          <div class="integration-section mb-4">
+            <strong>Google Gemini</strong>
+            <div class="small-text">
+              Gemini API key · armazenada somente no Windows Credential Manager.
+            </div>
+            <v-text-field v-model="geminiLabel" label="Identificação opcional"
+              variant="outlined" density="compact" class="mt-4"/>
+            <v-text-field v-model="geminiToken" label="Gemini API key"
+              type="password" autocomplete="off" variant="outlined" density="compact"/>
+            <v-btn color="primary" :loading="integrationBusy"
+              :disabled="integrationBusy || !geminiToken.trim()"
+              @click="configureGemini">Conectar Gemini</v-btn>
           </div>
           <div v-if="!integrationConnections.some(
               item => item.provider_type === 'ai_inference')" class="small-text">
