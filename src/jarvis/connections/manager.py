@@ -163,6 +163,8 @@ class ConnectionManager:
         descriptor = self.registry.get(provider_id)
         if descriptor is None or descriptor.provider_type != "ai_inference":
             raise ValueError("AI_PROVIDER_UNKNOWN")
+        if not descriptor.supports_ai_api_key_connection():
+            raise ValueError("AI_CONNECTION_METHOD_UNSUPPORTED")
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("AUTHENTICATION_REQUIRED")
         if not isinstance(label, str) or len(label) > 120:
