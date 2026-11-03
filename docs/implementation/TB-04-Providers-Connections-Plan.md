@@ -429,3 +429,16 @@ A first safe, schema-driven catalog implementation is committed on the feature b
 **UI follow-up (non-blocking):** searchable catalog puts many catalog-only entries ahead of the three connectable providers. Consider grouping/pinning connectable providers before the read-only catalog, without silently authorizing more adapters.
 
 See `docs/implementation/TB-04E2-Dynamic-AI-Provider-Catalog.md` for the trust boundary and remaining acceptance gate.
+
+## TB-04 — Final Acceptance Gate and catalog UX/security refinement — 2026-11-03
+
+Following owner acceptance of the TB-04E2 dynamic catalog in the tested Windows configuration, the feature branch has additional changes **pending validation**:
+
+- Connection configuration now shows only trusted, connectable AI providers.
+- Other LiteLLM-recognized providers are displayed in a separately expandable, searchable, read-only catalog (up to 20 items displayed).
+- The trusted API-key eligibility predicate is shared between the catalog and Connection Manager; catalog recognition does not grant authority to create Connections.
+- Unit tests cover catalog-only rejection, multi-Connection secret isolation, vault-write rollback, rejection of incompatible authentication methods and the updated UI separation.
+
+**Do not transfer the previous TB-04E2 acceptance automatically to these new commits.** Repeat focused Python regression, complete Python tests, production frontend build and Windows desktop smoke. Complete the remaining continuity and new-Connection security evidence before marking the entire TB-04 Product Done.
+
+See `docs/implementation/TB-04-Final-Acceptance-Gate.md` for the criteria, evidence and remaining checkpoints.
