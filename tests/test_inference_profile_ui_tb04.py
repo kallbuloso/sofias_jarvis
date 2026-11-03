@@ -149,7 +149,8 @@ def test_integrations_exposes_ai_connections_through_generic_catalog_form():
     value = source()
     assert "'loadAIProviderCatalog'" in value
     assert 'v-model="newAIProviderId"' in value
-    assert ':items="allAIProviderItems"' in value
+    assert ':items="configurableAIProviderItems"' in value
+    assert 'label="Selecionar AI Provider configurável"' in value
     assert 'v-for="field in selectedAIProviderCatalog?.connection_fields || []"' in value
     assert 'v-model="newAIFields[field.key]"' in value
     assert ':disabled="integrationBusy || !requiredAIFieldsPresent"' in value
@@ -171,6 +172,24 @@ def test_integrations_exposes_ai_connections_through_generic_catalog_form():
     ):
         assert legacy not in value
 
+
+
+
+def test_catalog_only_providers_are_read_only_and_limited_in_ui():
+    value = source()
+    assert "const catalogOnlyItems = computed(" in value
+    assert "aiCatalog.value.filter(item => !item.connectable)" in value
+    assert "const filteredCatalogOnlyItems = computed(" in value
+    assert "filteredCatalogOnlyItems.value.slice(0, 20)" in value
+    assert "Explorar catálogo LiteLLM" in value
+    assert 'v-model="catalogSearch"' in value
+    assert 'v-for="item in visibleCatalogOnlyItems"' in value
+
+    configure_area = value.split(
+        'label="Selecionar AI Provider configurável"', 1
+    )[1].split("</v-autocomplete>", 1)[0]
+    assert "allAIProviderItems" not in configure_area
+    assert "configurableAIProviderItems" in value
 
 def test_ai_connection_cards_expose_provider_neutral_litellm_diagnostics():
     value = source()
