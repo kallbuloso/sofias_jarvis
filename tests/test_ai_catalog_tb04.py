@@ -80,3 +80,115 @@ def test_malformed_provider_metadata_does_not_create_connection_fields():
     }
     assert "/bad" not in by_id
     assert by_id["groq"]["connectable"] is False
+
+
+class _FakeVault:
+    def __init__(self):
+        self.secrets = {}
+        self.deleted = []
+
+    def get_openai_key(self):
+        return None
+
+    def get_connection_secret(self, connection_id):
+        return self.secrets.get(connection_id)
+
+    def set_connection_secret(self, connection_id, secret):
+        self.secrets[connection_id] = secret
+
+    def delete_connection_secret(self, connection_id):
+        self.deleted.append(connection_id)
+        self.secrets.pop(connection_id, None)
+
+
+def test_catalog_only_provider_cannot_create_connection(tmp_path):
+    import pytest
+    from jarvis.connections.manager import ConnectionManager
+    from jarvis.connections.store import ConnectionStore
+
+    store = ConnectionStore(tmp_path / "jarvis.sqlite3")
+    vault = _FakeVault()
+    manager = ConnectionManager(store, vault)
+
+    with pytest.raises(ValueError, match="AI_PROVIDER_UNKNOWN"):
+        manager.create_ai("groq", "TOP-SECRET", label="not trusted")
+    assert store.list() == []
+    assert vault.secrets == {}
+    assert b"TOP-SECRET" not in (tmp_path / "jarvis.sqlite3").read_bytes()
+
+
+def test_generic_connection_create_keeps_secrets_out_of_store_and_public_ui(
+    tmp_path,
+):
+    import json
+    from jarvis.connections.manager import ConnectionManager
+    from jarvis.connections.store import ConnectionStore
+
+    path = tmp_path / "jarvis.sqlite3"
+    vault = _FakeVault()
+    manager = ConnectionManager(ConnectionStore(path), vault)
+
+    first = manager.create_ai("gemini", "PRIVATE-GEMINI-ONE", label="Pessoal")
+    second = manager.create_ai("gemini", "PRIVATE-GEMINI-TWO", label="Trabalho")
+
+    assert first["id"] != second["id"]
+    assert first["enabled"] is False and second["enabled"] is False
+    assert first["configured"] and second["configured"]
+    assert vault.secrets[first["id"]] == "PRIVATE-GEMINI-ONE"
+    assert vault.secrets[second["id"]] == "PRIVATE-GEMINI-TWO"
+
+    public = json.dumps(manager.list_connections())
+    raw = path.read_bytes()
+    for secret in ("PRIVATE-GEMINI-ONE", "PRIVATE-GEMINI-TWO"):
+        assert secret not in public
+        assert secret.encode() not in raw
+    assert first["id"] in public and second["id"] in public
+
+    assert manager.remove(first["id"]) is True
+    assert vault.secrets == {second["id"]: "PRIVATE-GEMINI-TWO"}
+    assert manager.store.get(first["id"]) is None
+    assert manager.store.get(second["id"]) is not None
+
+
+def test_generic_connection_vault_failure_rolls_back_local_identity(tmp_path):
+    import pytest
+    from jarvis.connections.manager import ConnectionManager
+    from jarvis.connections.store import ConnectionStore
+
+    class BrokenVault(_FakeVault):
+        def set_connection_secret(self, connection_id, secret):
+            raise RuntimeError("vault_unavailable")
+
+    store = ConnectionStore(tmp_path / "jarvis.sqlite3")
+    manager = ConnectionManager(store, BrokenVault())
+
+    with pytest.raises(RuntimeError, match="vault_unavailable"):
+        manager.create_ai("anthropic", "PRIVATE-ANTHROPIC")
+    assert store.list() == []
+    assert b"PRIVATE-ANTHROPIC" not in (tmp_path / "jarvis.sqlite3").read_bytes()
+
+
+def test_catalog_metadata_does_not_override_trusted_connection_contract():
+    fake = SimpleNamespace(
+        provider_list=["gemini", "groq"],
+        get_provider_fields=lambda: [
+            {
+                "litellm_provider": "gemini",
+                "provider_display_name": "Spoofed Provider",
+                "credential_fields": [
+                    {"key": "oauth_token", "field_type": "password",
+                     "required": True, "default_value": "SENSITIVE"},
+                ],
+            },
+        ],
+    )
+    by_id = {
+        item["provider_id"]: item
+        for item in LiteLLMProviderCatalog(litellm_module=fake).list()
+    }
+    gemini = by_id["gemini"]
+    assert gemini["connectable"] is True
+    assert gemini["display_name"] == "Google Gemini"
+    assert [field["key"] for field in gemini["connection_fields"]] == ["api_key"]
+    assert "SENSITIVE" not in str(gemini)
+    assert by_id["groq"]["connectable"] is False
