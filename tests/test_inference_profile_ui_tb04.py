@@ -140,3 +140,15 @@ def test_integrations_exposes_gemini_without_provider_specific_adapter_ui():
     assert "'configureAIConnection', 'gemini'" in configure
     assert "geminiToken.value = ''" in configure
 
+def test_ai_connection_cards_expose_provider_neutral_litellm_diagnostics():
+    value = source()
+    assert "'diagnoseAIConnection'" in value
+    assert "function runAIConnectionDiagnostic(connection)" in value
+    assert 'label="Modelo de diagnóstico"' in value
+    assert "Diagnóstico LiteLLM" in value
+    assert "diagnosticStatus(aiDiagnostics[connection.id].plain)" in value
+    assert "diagnosticStatus(aiDiagnostics[connection.id].structured)" in value
+    assert "diagnosticStatus(aiDiagnostics[connection.id].streaming)" in value
+    assert "litellm_version" in value
+    assert "qualified_model" in value
+
