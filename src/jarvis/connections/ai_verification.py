@@ -89,3 +89,83 @@ class AnthropicConnectionVerifier:
             "availability": "available",
             "available_models": models,
         }
+
+class GeminiConnectionVerifier:
+    """Authenticate Gemini API access by listing generative models."""
+
+    def __init__(self, *, opener: Any = None):
+        self._opener = opener if opener is not None else build_opener(_NoRedirect())
+
+    def inspect(self, api_key: str) -> dict:
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise AIConnectionVerificationError("AUTHENTICATION_REQUIRED")
+
+        request = Request(
+            "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000",
+            headers={
+                "Accept": "application/json",
+                "x-goog-api-key": api_key.strip(),
+                "User-Agent": "sofias-jarvis",
+            },
+            method="GET",
+        )
+        try:
+            with self._opener.open(request, timeout=_TIMEOUT_SECONDS) as response:
+                raw = response.read(_MAX_RESPONSE_BYTES + 1)
+        except HTTPError as exc:
+            if exc.code in (400, 401):
+                raise AIConnectionVerificationError("AUTHENTICATION_FAILED") from None
+            if exc.code == 403:
+                raise AIConnectionVerificationError(
+                    "EXTERNAL_PERMISSION_INSUFFICIENT"
+                ) from None
+            if exc.code == 429:
+                raise AIConnectionVerificationError("RATE_LIMITED") from None
+            if exc.code in (500, 502, 503, 504):
+                raise AIConnectionVerificationError("PROVIDER_UNAVAILABLE") from None
+            raise AIConnectionVerificationError("CONNECTION_UNAVAILABLE") from None
+        except (OSError, URLError, TimeoutError):
+            raise AIConnectionVerificationError("PROVIDER_UNAVAILABLE") from None
+
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            raise AIConnectionVerificationError("INVALID_RESPONSE")
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise AIConnectionVerificationError("INVALID_RESPONSE") from None
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            raise AIConnectionVerificationError("INVALID_RESPONSE")
+
+        models = []
+        for item in payload["models"]:
+            if not isinstance(item, dict):
+                continue
+            methods = item.get("supportedGenerationMethods", [])
+            if (not isinstance(methods, list)
+                    or "generateContent" not in methods):
+                continue
+            raw_name = item.get("name")
+            if not isinstance(raw_name, str) or not raw_name:
+                continue
+            model_id = (
+                raw_name[len("models/"):]
+                if raw_name.startswith("models/")
+                else raw_name
+            )
+            if not model_id.startswith("gemini-"):
+                continue
+            models.append({
+                "id": model_id,
+                "lifecycle": "available",
+            })
+
+        # Stable deterministic display/order in the desktop selector.
+        models.sort(key=lambda item: item["id"])
+        if not models:
+            raise AIConnectionVerificationError("NO_MODELS_AVAILABLE")
+
+        return {
+            "availability": "available",
+            "available_models": models,
+        }
+
