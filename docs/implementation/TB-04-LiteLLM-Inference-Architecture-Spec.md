@@ -1347,3 +1347,50 @@ The correction establishes a clearer ownership rule:
 This correction keeps the resolver precedence and LiteLLM execution path
 unchanged. It fixes UI truthfulness and profile ownership semantics only.
 
+## 36. TB-04D7 administration boundary correction — 2026-11-03
+
+Owner smoke identified that editing a profile from the Conversation toolbar creates
+an ambiguous mental model: the user may reasonably interpret Provider/Connection/
+Model changes as Conversation-local even though the profile itself may be shared.
+
+The UI boundary is therefore corrected:
+
+### Conversation surface
+
+The Conversation surface may:
+
+- select the Conversation inference profile;
+- inherit the global profile;
+- display resolved provenance:
+  - profile;
+  - winning scope;
+  - provider/model.
+
+The Conversation surface does **not** edit profile metadata or physical provider
+targets.
+
+### Integrations / inference-profile administration
+
+Profile administration now owns:
+
+- create;
+- edit;
+- delete;
+- Provider selection;
+- Connection selection;
+- model selection;
+- name/slug editing.
+
+Safety rules:
+
+- the reserved `general` profile is editable but not deletable;
+- the `general` slug is immutable/reserved;
+- a non-general profile cannot be deleted while it has active bindings;
+- deletion never silently cascades an active Conversation to another model;
+- binding counts are exposed to the UI;
+- profile deletion requires explicit confirmation.
+
+The global `general` profile remains the mandatory resolver fallback. A future
+design may support explicit global-profile replacement, but direct deletion of
+the only global fallback is outside TB-04D.
+
