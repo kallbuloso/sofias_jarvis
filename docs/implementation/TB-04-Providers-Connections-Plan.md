@@ -424,6 +424,8 @@ A first safe, schema-driven catalog implementation is committed on the feature b
 - Existing per-Connection Windows Credential Manager boundary, verifier/diagnostic, profile bindings and explicit inference selection are unchanged.
 - Added catalog-focused tests in `tests/test_ai_catalog_tb04.py`.
 
-**Validation status:** code published; focused tests, full regression, production frontend build and Windows credential/Desktop smoke have not yet been executed in the owner's environment. Do not mark TB-04E2 or TB-04 as Product Done.
+**Validation status (owner evidence, 2026-11-03): TB-04E2 FUNCTIONALLY ACCEPTED.** The owner reported a passing full Python regression and frontend production build, plus successful desktop manual testing. Evidence: 158 additional catalog-only providers visible; existing Anthropic and Gemini connections configured/enabled/available; the Gemini 3.5 Flash LiteLLM diagnostic succeeded in plain, structured JSON and streaming; a Gemini inference turn returned the expected response in the conversation. OpenAI showed `availability=unknown` (no status-check support), which is not evidence of a failed provider. This acceptance covers the exercised catalog/form, existing connections and inference paths; it does not establish generic credential support for catalog-only providers, nor independently prove a fresh Connection creation or full secret-exposure audit. TB-04 remains **IN PROGRESS**, not Product Done.
+
+**UI follow-up (non-blocking):** searchable catalog puts many catalog-only entries ahead of the three connectable providers. Consider grouping/pinning connectable providers before the read-only catalog, without silently authorizing more adapters.
 
 See `docs/implementation/TB-04E2-Dynamic-AI-Provider-Catalog.md` for the trust boundary and remaining acceptance gate.
