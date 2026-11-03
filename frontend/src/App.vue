@@ -839,6 +839,21 @@ async function ensureAISelection() {
   }
 }
 
+async function saveEffectiveInferenceProfile() {
+  if (busy.value || inferenceProfileBusy.value) return
+  inferenceProfileBusy.value = true
+  warning.value = ''
+  try {
+    const ok = await ensureAISelection()
+    if (!ok) return
+    if (selected.value) {
+      await refreshConversationInference(selected.value)
+    }
+  } finally {
+    inferenceProfileBusy.value = false
+  }
+}
+
 async function configureGitHub() {
   if (integrationBusy.value || !githubToken.value.trim()) return
   integrationBusy.value = true
@@ -1186,6 +1201,15 @@ onMounted(async () => {
                 label="Modelo de IA"
                 variant="outlined" density="compact" hide-details
                 placeholder="Digite o modelo habilitado"/>
+              <v-btn
+                variant="outlined"
+                color="primary"
+                :loading="inferenceProfileBusy"
+                :disabled="busy || inferenceProfileBusy || !aiProvider ||
+                  !aiConnectionId || !model.trim()"
+                @click="saveEffectiveInferenceProfile">
+                Salvar perfil
+              </v-btn>
             </div>
           </div>
           <div v-if="!credentialConfigured" class="inline-alert" role="alert">
@@ -1602,8 +1626,9 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
-.ai-selector { display: grid; grid-template-columns: 210px 145px 175px minmax(190px, 1fr);
-  gap: 10px; min-width: 760px; }
+.ai-selector { display: grid;
+  grid-template-columns: 210px 140px 165px minmax(185px, 1fr) auto;
+  gap: 10px; min-width: 840px; align-items: center; }
 .inference-resolution { margin-top: 4px; color: #79b9b5; }
 .profile-create-grid { display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
