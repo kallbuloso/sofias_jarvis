@@ -55,7 +55,7 @@ const catalogOnlyItems = computed(() =>
   aiCatalog.value.filter(item => !item.connectable)
 )
 const filteredCatalogOnlyItems = computed(() => {
-  const term = catalogSearch.value.trim().toLocaleLowerCase('pt-BR')
+  const term = String(catalogSearch.value || '').trim().toLocaleLowerCase('pt-BR')
   if (!term) return catalogOnlyItems.value
   return catalogOnlyItems.value.filter(item =>
     item.display_name.toLocaleLowerCase('pt-BR').includes(term) ||
