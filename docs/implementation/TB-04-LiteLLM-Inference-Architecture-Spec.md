@@ -1442,3 +1442,54 @@ Recommended initial stable smoke model based on current Google documentation:
 
 TB-04E remains pending owner Windows regression/build and real Gemini API smoke.
 
+## 38. TB-04E1 LiteLLM transport diagnostics — 2026-11-03
+
+Gemini owner smoke showed intermittent inference failures despite successful
+credential/model verification and at least one successful end-to-end turn.
+
+No Gemini-specific inference adapter was introduced.
+
+Instead, a provider-neutral LiteLLM diagnostic surface was added to isolate the
+transport outside Conversation routing:
+
+```text
+resolved AI Connection + selected model
+→ plain completion
+→ structured JSON completion
+→ streaming completion
+```
+
+Each probe records only non-secret diagnostic metadata:
+
+- LiteLLM distribution version;
+- provider/model and qualified `provider/model`;
+- configured timeout;
+- success/failure;
+- elapsed milliseconds;
+- streaming first-token milliseconds;
+- normalized JARVIS provider error code;
+- exception class;
+- immediate cause class when present;
+- HTTP status when available;
+- sanitized provider/LiteLLM detail with the credential explicitly redacted.
+
+The diagnostic runs asynchronously in the existing Connection worker and does
+not freeze the Qt GUI.
+
+Desktop Integrations now exposes a model selector and `Diagnosticar` action
+for verified AI Connections.
+
+This diagnostic is intentionally provider-neutral and can be run against
+OpenAI, Anthropic, Gemini or future LiteLLM-backed providers.
+
+Gate before TB-04E2:
+
+1. run focused/full tests + frontend build;
+2. run the diagnostic against the failing Gemini model;
+3. compare plain / structured / streaming results;
+4. only then decide whether the defect belongs to LiteLLM stable, model-specific
+   behavior, configuration, or JARVIS compatibility code.
+
+TB-04E2 (dynamic provider catalog / generic add-provider form) must not begin
+until this diagnostic evidence is captured.
+
