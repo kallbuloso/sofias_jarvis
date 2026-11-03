@@ -798,6 +798,17 @@ async function ensureAISelection() {
     warning.value = 'Nenhum perfil de inferência efetivo está disponível.'
     return false
   }
+
+  const alreadyResolved = (
+    resolvedInference.value?.profile_id === profileId &&
+    resolvedInference.value?.provider_id === aiProvider.value &&
+    resolvedInference.value?.connection_id === aiConnectionId.value &&
+    resolvedInference.value?.model === model.value.trim()
+  )
+  if (alreadyResolved) {
+    return true
+  }
+
   try {
     const result = await call(
       'updateInferenceProfilePrimary',
