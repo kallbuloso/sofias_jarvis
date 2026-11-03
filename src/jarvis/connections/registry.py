@@ -66,6 +66,25 @@ ANTHROPIC = ProviderDescriptor(
 )
 
 
+GEMINI = ProviderDescriptor(
+    provider_id="gemini",
+    display_name="Google Gemini",
+    provider_type="ai_inference",
+    contract_versions=("inference-v1", "connection-v1"),
+    capabilities=(
+        "inference.text.streaming",
+        "inference.structured_json",
+    ),
+    supported_auth_methods=("api_key",),
+    multi_connection_support=True,
+    status_check_support=True,
+    reconnect_support=True,
+    provider_revoke_support=False,
+    transport="litellm",
+    litellm_prefix="gemini",
+)
+
+
 GITHUB = ProviderDescriptor(
     provider_id="github",
     display_name="GitHub",
@@ -89,6 +108,7 @@ class ProviderRegistry:
         self._providers = {
             OPENAI.provider_id: OPENAI,
             ANTHROPIC.provider_id: ANTHROPIC,
+            GEMINI.provider_id: GEMINI,
             GITHUB.provider_id: GITHUB,
         }
 
