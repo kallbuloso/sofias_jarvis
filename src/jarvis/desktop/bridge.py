@@ -868,9 +868,39 @@ class IntegrationConnectionWorker(QObject):
                 item = manager.verify_ai(self.payload["connection_id"])
             elif self.action == "inspect":
                 item = manager.inspect(self.payload["connection_id"])
+            elif self.action == "diagnose_ai":
+                connection_id = self.payload["connection_id"]
+                model = self.payload["model"]
+                stored = manager.store.get(connection_id)
+                if stored is None:
+                    raise ValueError("AI_CONNECTION_NOT_AVAILABLE")
+                item, credential = manager.resolve_ai_connection(
+                    provider_id=stored["provider_id"],
+                    connection_id=connection_id,
+                    model_id=model,
+                )
+                from jarvis.inference.diagnostics import (
+                    LiteLLMConnectionDiagnostics,
+                )
+                diagnostic = LiteLLMConnectionDiagnostics(
+                    provider_id=item["provider_id"],
+                    credential=credential,
+                ).run(model)
+                result = {
+                    "ok": True,
+                    "action": self.action,
+                    "connection": item,
+                    "diagnostic": diagnostic,
+                }
+                item = None
             else:
                 raise ValueError("unsupported_connection_worker_action")
-            result = {"ok": True, "action": self.action, "connection": item}
+            if self.action != "diagnose_ai":
+                result = {
+                    "ok": True,
+                    "action": self.action,
+                    "connection": item,
+                }
         except Exception as exc:
             result = {
                 "ok": False,
@@ -1327,6 +1357,24 @@ class JarvisBridge(QObject):
             return _json({"ok": False, "error": "invalid_connection"})
         return self._start_connection_worker(
             "verify_ai", {"connection_id": connection_id},
+        )
+
+    @Slot(str, str, result=str)
+    def diagnoseAIConnection(
+        self, connection_id: str, model: str,
+    ) -> str:
+        try:
+            connection_id = str(UUID(connection_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_connection"})
+        if not isinstance(model, str) or not model.strip():
+            return _json({"ok": False, "error": "missing_model"})
+        return self._start_connection_worker(
+            "diagnose_ai",
+            {
+                "connection_id": connection_id,
+                "model": model.strip(),
+            },
         )
 
     @Slot(str, result=str)
