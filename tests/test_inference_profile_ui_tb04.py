@@ -95,3 +95,14 @@ def test_unchanged_resolved_profile_is_not_rewritten_on_every_send():
         "'updateInferenceProfilePrimary'"
     )
 
+def test_effective_profile_can_be_saved_without_sending_a_message():
+    value = source()
+    assert "async function saveEffectiveInferenceProfile()" in value
+    assert '@click="saveEffectiveInferenceProfile"' in value
+    assert ">\n                Salvar perfil\n" in value
+    helper = value.split(
+        "async function saveEffectiveInferenceProfile() {", 1
+    )[1].split("\nasync function configureGitHub()", 1)[0]
+    assert "ensureAISelection()" in helper
+    assert "refreshConversationInference(selected.value)" in helper
+
