@@ -260,3 +260,105 @@ def test_update_profile_rejects_provider_connection_mismatch(bridge_env):
 
     assert result["ok"] is False
 
+def test_list_surface_marks_general_reserved_and_not_deletable(bridge_env):
+    _, bridge, _, _ = bridge_env
+    result = json.loads(bridge.listInferenceProfiles())
+
+    general = next(item for item in result["items"] if item["slug"] == "general")
+    assert general["reserved"] is True
+    assert general["deletable"] is False
+    assert general["bindingCount"] >= 1
+
+
+def test_general_can_be_edited_but_slug_is_reserved(bridge_env):
+    path, bridge, _, secrets = bridge_env
+    anthropic = _anthropic(path / "jarvis.sqlite3", secrets)
+    profiles = json.loads(bridge.listInferenceProfiles())["items"]
+    general = next(item for item in profiles if item["slug"] == "general")
+
+    edited = json.loads(bridge.updateInferenceProfile(
+        general["id"],
+        "Perfil Geral",
+        "general",
+        "anthropic",
+        anthropic["id"],
+        "claude-sonnet-5-5",
+    ))
+    assert edited["ok"] is True
+    assert edited["profile"]["name"] == "Perfil Geral"
+    assert edited["profile"]["providerId"] == "anthropic"
+    assert edited["profile"]["model"] == "claude-sonnet-5-5"
+
+    rejected = json.loads(bridge.updateInferenceProfile(
+        general["id"],
+        "Perfil Geral",
+        "general-renamed",
+        "anthropic",
+        anthropic["id"],
+        "claude-sonnet-5-5",
+    ))
+    assert rejected["ok"] is False
+    assert rejected["error"] == "general_profile_slug_reserved"
+
+
+def test_general_cannot_be_deleted(bridge_env):
+    _, bridge, _, _ = bridge_env
+    general = next(
+        item for item in json.loads(bridge.listInferenceProfiles())["items"]
+        if item["slug"] == "general"
+    )
+
+    result = json.loads(bridge.deleteInferenceProfile(general["id"]))
+
+    assert result["ok"] is False
+    assert result["error"] == "general_profile_required"
+
+
+def test_profile_in_use_cannot_be_deleted_until_unbound(bridge_env):
+    path, bridge, boot, _ = bridge_env
+    created = json.loads(bridge.createInferenceProfile(
+        "Coding profundo",
+        "coding-deep",
+        boot["aiConnectionId"],
+        "gpt-6-luna",
+    ))["profile"]
+    cid = json.loads(bridge.createConversation())["id"]
+    bound = json.loads(bridge.setConversationInferenceProfile(
+        cid, created["id"],
+    ))
+    assert bound["ok"] is True
+
+    blocked = json.loads(bridge.deleteInferenceProfile(created["id"]))
+    assert blocked["ok"] is False
+    assert blocked["error"] == "inference_profile_in_use"
+
+    json.loads(bridge.setConversationInferenceProfile(cid, ""))
+    deleted = json.loads(bridge.deleteInferenceProfile(created["id"]))
+    assert deleted["ok"] is True
+
+
+def test_profile_edit_updates_name_slug_and_physical_target(bridge_env):
+    path, bridge, boot, secrets = bridge_env
+    anthropic = _anthropic(path / "jarvis.sqlite3", secrets)
+    created = json.loads(bridge.createInferenceProfile(
+        "Coding profundo",
+        "coding-deep",
+        boot["aiConnectionId"],
+        "gpt-6-luna",
+    ))["profile"]
+
+    result = json.loads(bridge.updateInferenceProfile(
+        created["id"],
+        "Coding Máximo",
+        "coding-max",
+        "anthropic",
+        anthropic["id"],
+        "claude-sonnet-5-5",
+    ))
+
+    assert result["ok"] is True
+    assert result["profile"]["name"] == "Coding Máximo"
+    assert result["profile"]["slug"] == "coding-max"
+    assert result["profile"]["providerId"] == "anthropic"
+    assert result["profile"]["model"] == "claude-sonnet-5-5"
+
