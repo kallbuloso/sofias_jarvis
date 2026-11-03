@@ -1594,7 +1594,8 @@ html, body, #app { height: 100%; margin: 0; }
 .brand { color: #ebffff; font-size: 22px; font-weight: 700; letter-spacing: 3px; margin-bottom: 20px; }
 .brand span { color: #008f8f; font-size: 11px; letter-spacing: 1px; }
 .sidebar-footer { position: absolute; bottom: 24px; left: 20px; font-size: 12px; color: #82969e; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 22px;
+.toolbar { display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 14px 22px;
   padding: 22px 26px 16px; border-bottom: 1px solid #243441; }
 .heading { font-size: 20px; font-weight: 600; }
 .small-text { font-size: 12px; color: #82969e; }
