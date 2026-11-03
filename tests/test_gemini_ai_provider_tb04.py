@@ -257,3 +257,15 @@ def test_no_gemini_specific_inference_adapter_exists():
         if path.is_file()
     ]
     assert forbidden == []
+
+def test_gemini_diagnostics_remain_provider_neutral():
+    from jarvis.inference.diagnostics import LiteLLMConnectionDiagnostics
+
+    diagnostic = LiteLLMConnectionDiagnostics(
+        provider_id="gemini",
+        credential="PRIVATE",
+        completion_fn=lambda **kwargs: None,
+    )
+    assert diagnostic.provider_id == "gemini"
+    assert diagnostic.prefix == "gemini"
+
