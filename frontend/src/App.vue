@@ -1500,6 +1500,58 @@ onMounted(async () => {
                   </v-btn>
                 </div>
               </div>
+              <div v-if="diagnosticModels(connection).length"
+                class="diagnostic-panel mt-4">
+                <div class="small-text mb-2">Diagnóstico LiteLLM</div>
+                <div class="diagnostic-controls">
+                  <v-select
+                    v-model="aiDiagnosticModels[connection.id]"
+                    :items="diagnosticModels(connection)"
+                    label="Modelo de diagnóstico"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    :disabled="integrationBusy || !connection.enabled"/>
+                  <v-btn size="small" variant="outlined"
+                    :loading="integrationBusy"
+                    :disabled="integrationBusy || !connection.enabled ||
+                      !aiDiagnosticModels[connection.id]"
+                    @click="runAIConnectionDiagnostic(connection)">
+                    Diagnosticar
+                  </v-btn>
+                </div>
+                <div v-if="aiDiagnostics[connection.id]"
+                  class="diagnostic-result mt-3">
+                  <div class="small-text">
+                    LiteLLM {{ aiDiagnostics[connection.id].litellm_version }} ·
+                    {{ aiDiagnostics[connection.id].qualified_model }} ·
+                    timeout {{ aiDiagnostics[connection.id].timeout_seconds }}s
+                  </div>
+                  <div class="small-text">
+                    plain: {{ diagnosticStatus(aiDiagnostics[connection.id].plain) }}
+                  </div>
+                  <div class="small-text">
+                    structured:
+                    {{ diagnosticStatus(aiDiagnostics[connection.id].structured) }}
+                  </div>
+                  <div v-if="aiDiagnostics[connection.id].structured?.detail"
+                    class="diagnostic-detail">
+                    structured: {{ aiDiagnostics[connection.id].structured.detail }}
+                  </div>
+                  <div class="small-text">
+                    streaming:
+                    {{ diagnosticStatus(aiDiagnostics[connection.id].streaming) }}
+                  </div>
+                  <div v-if="aiDiagnostics[connection.id].streaming?.detail"
+                    class="diagnostic-detail">
+                    streaming: {{ aiDiagnostics[connection.id].streaming.detail }}
+                  </div>
+                  <div v-if="aiDiagnostics[connection.id].plain?.detail"
+                    class="diagnostic-detail">
+                    plain: {{ aiDiagnostics[connection.id].plain.detail }}
+                  </div>
+                </div>
+              </div>
             </v-card-text>
           </v-card>
 
@@ -1865,6 +1917,13 @@ html, body, #app { height: 100%; margin: 0; }
 .integration-section { padding: 4px 0; }
 .integration-row { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
 .integration-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.diagnostic-panel { border-top: 1px solid #263b47; padding-top: 12px; }
+.diagnostic-controls { display: grid; grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px; align-items: center; }
+.diagnostic-result { padding: 10px 12px; border: 1px solid #294552;
+  border-radius: 8px; }
+.diagnostic-detail { margin-top: 4px; font-size: 12px; line-height: 1.35;
+  color: #d1a96b; overflow-wrap: anywhere; }
 </style>
 
 <style scoped>
