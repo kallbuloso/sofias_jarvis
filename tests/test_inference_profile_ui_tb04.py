@@ -26,21 +26,28 @@ def test_profile_ui_uses_bridge_policy_surface_not_provider_secrets():
         "getConversationInference",
         "setConversationInferenceProfile",
         "createInferenceProfile",
+        "updateInferenceProfilePrimary",
     ):
         assert f"'{method}'" in value
     assert "profile.connectionId" not in value
     assert "profile.credential" not in value
 
 
-def test_profile_creation_uses_current_connection_and_model():
+def test_profile_creation_has_its_own_provider_connection_and_model():
     value = source()
     create = value.split("async function createInferenceProfile() {", 1)[1].split(
         "\nasync function refreshIntegrations()", 1
     )[0]
-    assert "aiConnectionId.value" in create
-    assert "model.value.trim()" in create
+    assert "profileProvider.value" in create
+    assert "profileConnectionId.value" in create
+    assert "profileModel.value.trim()" in create
+    assert "aiConnectionId.value" not in create
     assert "'createInferenceProfile'" in create
     assert "refreshInferenceProfiles()" in create
+
+    assert 'label="Provider do perfil"' in value
+    assert 'label="Conexão do perfil"' in value
+    assert 'label="Modelo do perfil"' in value
 
 
 def test_open_conversation_refreshes_effective_inference_policy():
@@ -51,11 +58,28 @@ def test_open_conversation_refreshes_effective_inference_policy():
     assert "refreshConversationInference(id)" in open_conversation
 
 
-def test_general_physical_selection_refreshes_profile_and_resolution_ui():
+def test_physical_selection_edits_effective_profile_not_always_general():
     value = source()
     selection = value.split("async function ensureAISelection() {", 1)[1].split(
         "\nasync function configureGitHub()", 1
     )[0]
-    assert "selectAIConnection" in selection
+    assert "effectiveInferenceProfileId()" in selection
+    assert "updateInferenceProfilePrimary" in selection
+    assert "selectAIConnection" not in selection
     assert "refreshInferenceProfiles()" in selection
     assert "refreshConversationInference(selected.value)" in selection
+
+
+def test_resolved_profile_synchronizes_toolbar_provider_connection_and_model():
+    value = source()
+    apply = value.split("function applyResolvedInference(plan) {", 1)[1].split(
+        "\nfunction effectiveInferenceProfileId()", 1
+    )[0]
+    assert "aiProvider.value = plan.provider_id" in apply
+    assert "aiConnectionId.value = plan.connection_id" in apply
+    assert "model.value = plan.model" in apply
+
+    change = value.split(
+        "async function onConversationProfileChanged(profileId) {", 1
+    )[1].split("\nfunction onProfileProviderChanged", 1)[0]
+    assert "applyResolvedInference(result.resolved" in change
