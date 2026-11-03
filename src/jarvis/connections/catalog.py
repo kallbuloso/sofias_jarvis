@@ -141,10 +141,7 @@ class LiteLLMProviderCatalog:
             descriptor = self.registry.get(provider_id)
             managed = bool(
                 descriptor is not None
-                and descriptor.provider_type == "ai_inference"
-                and descriptor.transport == "litellm"
-                and descriptor.litellm_prefix == provider_id
-                and "api_key" in descriptor.supported_auth_methods
+                and descriptor.supports_ai_api_key_connection()
             )
             # JARVIS currently stores one per-Connection API key and does not
             # support arbitrary OAuth, uploads, endpoint URLs or SDK env auth.
