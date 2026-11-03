@@ -1394,3 +1394,51 @@ The global `general` profile remains the mandatory resolver fallback. A future
 design may support explicit global-profile replacement, but direct deletion of
 the only global fallback is outside TB-04D.
 
+## 37. TB-04E third-provider proof checkpoint — 2026-11-03
+
+Gemini has been added as the third AI provider candidate using the existing
+LiteLLM transport architecture.
+
+Implementation:
+
+- Provider Registry metadata:
+  - provider_id=`gemini`;
+  - provider_type=`ai_inference`;
+  - transport=`litellm`;
+  - litellm_prefix=`gemini`;
+  - streaming + structured JSON capabilities;
+- no Gemini-specific inference adapter was created;
+- Gemini credentials use the existing Connection Manager and Windows
+  Credential Manager path;
+- non-inference credential verification uses the official Gemini
+  `models.list` endpoint with `x-goog-api-key`;
+- model identifiers returned as `models/<id>` are normalized to JARVIS model
+  IDs;
+- only Gemini models advertising `generateContent` are persisted as observed
+  inference models;
+- desktop Integrations can configure, verify, enable and remove Gemini
+  Connections through the generic AI Connection lifecycle;
+- profiles can target Gemini Connections/models through the existing profile
+  administration surface;
+- `build_inference_provider("gemini", ...)` resolves to the single
+  `LiteLLMInferenceAdapter` with `gemini/<model>`;
+- tests explicitly protect the architectural invariant that no
+  `jarvis/adapters/*gemini*` inference adapter exists.
+
+Current owner-smoke target:
+
+```text
+Google Gemini
+→ verified Connection
+→ profile
+→ Conversation binding
+→ TextIntentRouter structured JSON
+→ normal streaming response
+→ same canonical Conversation
+```
+
+Recommended initial stable smoke model based on current Google documentation:
+`gemini-3.8-flash`.
+
+TB-04E remains pending owner Windows regression/build and real Gemini API smoke.
+
