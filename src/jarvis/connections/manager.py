@@ -5,6 +5,7 @@ from jarvis.connections.github import GitHubConnectionAdapter, GitHubConnectionE
 from jarvis.connections.ai_verification import (
     AIConnectionVerificationError,
     AnthropicConnectionVerifier,
+    GeminiConnectionVerifier,
 )
 from jarvis.connections.registry import ProviderRegistry
 from jarvis.connections.store import ConnectionStore
@@ -17,7 +18,10 @@ class ConnectionManager:
         self.vault = vault
         self.registry = ProviderRegistry()
         self._adapters = {"github": GitHubConnectionAdapter()}
-        self._ai_verifiers = {"anthropic": AnthropicConnectionVerifier()}
+        self._ai_verifiers = {
+            "anthropic": AnthropicConnectionVerifier(),
+            "gemini": GeminiConnectionVerifier(),
+        }
 
     def providers(self) -> list[dict]:
         return self.registry.list()
