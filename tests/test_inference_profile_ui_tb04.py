@@ -127,3 +127,16 @@ def test_send_only_validates_resolved_profile_and_does_not_edit_it():
     assert "credentialConfigured.value" in selection
     assert "updateInferenceProfile" not in selection
     assert "selectAIConnection" not in selection
+
+def test_integrations_exposes_gemini_without_provider_specific_adapter_ui():
+    value = source()
+    assert "Google Gemini" in value
+    assert 'v-model="geminiToken"' in value
+    assert 'label="Gemini API key"' in value
+    assert '@click="configureGemini"' in value
+    configure = value.split("async function configureGemini() {", 1)[1].split(
+        "\nfunction chooseModelForConnection", 1
+    )[0]
+    assert "'configureAIConnection', 'gemini'" in configure
+    assert "geminiToken.value = ''" in configure
+
