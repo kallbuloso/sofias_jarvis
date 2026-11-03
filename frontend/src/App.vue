@@ -49,6 +49,9 @@ const resolvedInference = ref(null)
 const inferenceProfileBusy = ref(false)
 const profileName = ref('')
 const profileSlug = ref('')
+const profileProvider = ref('')
+const profileConnectionId = ref('')
+const profileModel = ref('')
 const profileCreateBusy = ref(false)
 const inferenceProfileItems = computed(() => [
   { title: 'Herdar do perfil global', value: '' },
@@ -91,6 +94,23 @@ const selectedAIConnection = computed(() =>
 )
 const aiModelItems = computed(() => {
   const models = selectedAIConnection.value?.configuration?.observed_models
+  return Array.isArray(models) ? models : []
+})
+const profileConnectionItems = computed(() =>
+  aiConnections.value
+    .filter(item => item.provider_id === profileProvider.value)
+    .map(item => ({
+      title: item.configuration?.label || item.provider_name || item.id,
+      value: item.id,
+    }))
+)
+const selectedProfileConnection = computed(() =>
+  integrationConnections.value.find(
+    item => item.id === profileConnectionId.value
+  )
+)
+const profileModelItems = computed(() => {
+  const models = selectedProfileConnection.value?.configuration?.observed_models
   return Array.isArray(models) ? models : []
 })
 // Render only a small, explicitly supported subset of inline Markdown.
@@ -545,6 +565,34 @@ async function confirmMemoryMutation() {
   }
 }
 
+function applyResolvedInference(plan) {
+  resolvedInference.value = plan || null
+  if (!plan) return
+
+  aiProvider.value = plan.provider_id || ''
+  aiConnectionId.value = plan.connection_id || ''
+  model.value = plan.model || ''
+
+  const connection = aiConnections.value.find(
+    item => item.id === aiConnectionId.value &&
+      item.provider_id === aiProvider.value
+  )
+  credentialConfigured.value = Boolean(connection)
+  if (aiProvider.value && model.value) {
+    aiModelPreferences.value = {
+      ...aiModelPreferences.value,
+      [aiProvider.value]: model.value,
+    }
+  }
+}
+
+function effectiveInferenceProfileId() {
+  if (resolvedInference.value?.profile_id) {
+    return resolvedInference.value.profile_id
+  }
+  return inferenceProfiles.value.find(item => item.slug === 'general')?.id || ''
+}
+
 async function refreshInferenceProfiles() {
   const result = await call('listInferenceProfiles')
   if (!result.ok) throw new Error(result.error || 'profiles_unavailable')
@@ -564,7 +612,7 @@ async function refreshConversationInference(conversationId) {
     throw new Error(result.error || 'inference_resolution_unavailable')
   }
   conversationProfileId.value = result.bindingProfileId || ''
-  resolvedInference.value = result.resolved || null
+  applyResolvedInference(result.resolved || null)
 }
 
 async function onConversationProfileChanged(profileId) {
@@ -585,7 +633,7 @@ async function onConversationProfileChanged(profileId) {
       return
     }
     conversationProfileId.value = result.bindingProfileId || ''
-    resolvedInference.value = result.resolved || null
+    applyResolvedInference(result.resolved || null)
   } catch {
     warning.value = 'Falha ao alterar o perfil de inferência da conversa.'
     await refreshConversationInference(selected.value).catch(() => {})
@@ -594,10 +642,36 @@ async function onConversationProfileChanged(profileId) {
   }
 }
 
+function onProfileProviderChanged(providerId) {
+  profileProvider.value = providerId || ''
+  const first = aiConnections.value.find(
+    item => item.provider_id === profileProvider.value
+  )
+  profileConnectionId.value = first?.id || ''
+  profileModel.value = chooseModelForConnection(
+    profileProvider.value, first,
+  )
+}
+
+function onProfileConnectionChanged(connectionId) {
+  profileConnectionId.value = connectionId || ''
+  const connection = integrationConnections.value.find(
+    item => item.id === profileConnectionId.value
+  )
+  if (connection) {
+    profileProvider.value = connection.provider_id
+    profileModel.value = chooseModelForConnection(
+      connection.provider_id, connection,
+    )
+  } else {
+    profileModel.value = ''
+  }
+}
+
 async function createInferenceProfile() {
   if (profileCreateBusy.value || !profileName.value.trim() ||
-      !profileSlug.value.trim() || !aiConnectionId.value ||
-      !model.value.trim()) return
+      !profileSlug.value.trim() || !profileProvider.value ||
+      !profileConnectionId.value || !profileModel.value.trim()) return
   profileCreateBusy.value = true
   warning.value = ''
   try {
@@ -605,8 +679,8 @@ async function createInferenceProfile() {
       'createInferenceProfile',
       profileName.value.trim(),
       profileSlug.value.trim(),
-      aiConnectionId.value,
-      model.value.trim(),
+      profileConnectionId.value,
+      profileModel.value.trim(),
     )
     if (!result.ok) {
       warning.value = 'Não foi possível criar o perfil: ' +
@@ -647,6 +721,19 @@ async function openIntegrations() {
       refreshIntegrations(),
       refreshInferenceProfiles(),
     ])
+    if (!profileProvider.value) {
+      profileProvider.value = aiProvider.value || aiProviderItems.value[0]?.value || ''
+    }
+    const currentProfileConnection = aiConnections.value.find(
+      item => item.id === aiConnectionId.value &&
+        item.provider_id === profileProvider.value
+    )
+    const firstProfileConnection = currentProfileConnection ||
+      aiConnections.value.find(item => item.provider_id === profileProvider.value)
+    profileConnectionId.value = firstProfileConnection?.id || ''
+    profileModel.value = firstProfileConnection
+      ? chooseModelForConnection(profileProvider.value, firstProfileConnection)
+      : ''
   } catch {
     warning.value = 'Não foi possível carregar as integrações.'
   }
@@ -706,13 +793,22 @@ async function ensureAISelection() {
     warning.value = 'Selecione Provider, conexão e modelo de IA.'
     return false
   }
+  const profileId = effectiveInferenceProfileId()
+  if (!profileId) {
+    warning.value = 'Nenhum perfil de inferência efetivo está disponível.'
+    return false
+  }
   try {
     const result = await call(
-      'selectAIConnection',
-      aiProvider.value, aiConnectionId.value, model.value.trim(),
+      'updateInferenceProfilePrimary',
+      profileId,
+      aiProvider.value,
+      aiConnectionId.value,
+      model.value.trim(),
     )
     if (!result.ok) {
-      warning.value = 'Seleção de IA recusada: ' + (result.error || 'unknown')
+      warning.value = 'Configuração do perfil recusada: ' +
+        (result.error || 'unknown')
       credentialConfigured.value = false
       return false
     }
@@ -723,11 +819,11 @@ async function ensureAISelection() {
     credentialConfigured.value = true
     await refreshInferenceProfiles()
     if (selected.value) {
-      await refreshConversationInference(selected.value).catch(() => {})
+      await refreshConversationInference(selected.value)
     }
     return true
   } catch {
-    warning.value = 'Não foi possível selecionar o AI Provider.'
+    warning.value = 'Não foi possível atualizar o perfil de inferência.'
     return false
   }
 }
@@ -1252,7 +1348,7 @@ onMounted(async () => {
           <div class="integration-section mt-4">
             <strong>Novo perfil</strong>
             <div class="small-text">
-              Usa a Connection e o modelo atualmente selecionados no topo.
+              Escolha explicitamente o Provider, a Connection e o modelo deste perfil.
             </div>
             <div class="profile-create-grid mt-3">
               <v-text-field v-model="profileName" label="Nome"
@@ -1260,9 +1356,41 @@ onMounted(async () => {
               <v-text-field v-model="profileSlug" label="Slug"
                 placeholder="coding-deep"
                 variant="outlined" density="compact" hide-details/>
+              <v-select
+                v-model="profileProvider"
+                :items="aiProviderItems"
+                label="Provider do perfil"
+                variant="outlined"
+                density="compact"
+                hide-details
+                @update:model-value="onProfileProviderChanged"/>
+              <v-select
+                v-model="profileConnectionId"
+                :items="profileConnectionItems"
+                label="Conexão do perfil"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :disabled="!profileProvider"
+                @update:model-value="onProfileConnectionChanged"/>
+              <v-select v-if="profileModelItems.length"
+                v-model="profileModel"
+                :items="profileModelItems"
+                label="Modelo do perfil"
+                variant="outlined"
+                density="compact"
+                hide-details/>
+              <v-text-field v-else
+                v-model="profileModel"
+                label="Modelo do perfil"
+                variant="outlined"
+                density="compact"
+                hide-details
+                placeholder="Digite o modelo habilitado"/>
               <v-btn color="primary" :loading="profileCreateBusy"
                 :disabled="profileCreateBusy || !profileName.trim() ||
-                  !profileSlug.trim() || !aiConnectionId || !model.trim()"
+                  !profileSlug.trim() || !profileProvider ||
+                  !profileConnectionId || !profileModel.trim()"
                 @click="createInferenceProfile">Criar perfil</v-btn>
             </div>
           </div>
@@ -1465,8 +1593,10 @@ html, body, #app { height: 100%; margin: 0; }
 .ai-selector { display: grid; grid-template-columns: 210px 145px 175px minmax(190px, 1fr);
   gap: 10px; min-width: 760px; }
 .inference-resolution { margin-top: 4px; color: #79b9b5; }
-.profile-create-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px;
+.profile-create-grid { display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
   align-items: center; }
+.profile-create-grid .v-btn { justify-self: start; }
 .integration-section { padding: 4px 0; }
 .integration-row { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; }
 .integration-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
