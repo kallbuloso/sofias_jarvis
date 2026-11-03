@@ -195,6 +195,104 @@ class InferenceProfileStore:
             ).fetchall()
         return [self._decode_profile(row) for row in rows]
 
+    def binding_count(self, profile_id: str) -> int:
+        profile_id = _uuid(profile_id)
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS total FROM inference_bindings "
+                "WHERE profile_id=? AND enabled=1",
+                (profile_id,),
+            ).fetchone()
+        return int(row["total"] if row else 0)
+
+    def update_profile(
+        self,
+        profile_id: str,
+        *,
+        name: str,
+        slug: str,
+        connection_id: str,
+        model: str,
+    ) -> dict:
+        profile_id = _uuid(profile_id)
+        slug = _slug(slug)
+        connection_id = _uuid(connection_id)
+        model = _model(model)
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
+            raise ValueError("invalid_profile_name")
+
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT slug,configuration_json FROM inference_profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("inference_profile_not_found")
+            if row["slug"] == "general" and slug != "general":
+                raise ValueError("general_profile_slug_reserved")
+
+            connection = db.execute(
+                "SELECT provider_id FROM integration_connections WHERE id=?",
+                (connection_id,),
+            ).fetchone()
+            if connection is None:
+                raise ValueError("inference_profile_connection_not_found")
+            descriptor = ProviderRegistry().get(connection["provider_id"])
+            if descriptor is None or descriptor.provider_type != "ai_inference":
+                raise ValueError("inference_profile_requires_ai_connection")
+
+            configuration = json.loads(row["configuration_json"])
+            configuration["primary"] = {
+                "connection_id": connection_id,
+                "model": model,
+            }
+            now = _now()
+            try:
+                db.execute(
+                    """UPDATE inference_profiles
+                       SET slug=?,name=?,configuration_json=?,updated_at=?
+                       WHERE id=?""",
+                    (
+                        slug,
+                        name.strip(),
+                        json.dumps(
+                            configuration,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        now,
+                        profile_id,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("inference_profile_slug_conflict") from exc
+        return self.get_profile(profile_id)
+
+    def delete_profile(self, profile_id: str) -> bool:
+        profile_id = _uuid(profile_id)
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT slug FROM inference_profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            if row["slug"] == "general":
+                raise ValueError("general_profile_required")
+            bindings = db.execute(
+                "SELECT COUNT(*) AS total FROM inference_bindings "
+                "WHERE profile_id=? AND enabled=1",
+                (profile_id,),
+            ).fetchone()
+            if bindings and int(bindings["total"]) > 0:
+                raise ValueError("inference_profile_in_use")
+            removed = db.execute(
+                "DELETE FROM inference_profiles WHERE id=?",
+                (profile_id,),
+            )
+        return removed.rowcount == 1
+
     def bind(
         self,
         profile_id: str,
