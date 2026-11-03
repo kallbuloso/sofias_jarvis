@@ -411,3 +411,19 @@ TB-04C is functionally accepted at provider-parity level. Full regression,
 frontend production build and final Windows desktop smoke remain the gate before
 advancing implementation to TB-04D InferenceProfile / InferenceResolver.
 
+## TB-04E2 — Dynamic AI Provider Catalog implementation checkpoint — 2026-11-02
+
+A first safe, schema-driven catalog implementation is committed on the feature branch:
+
+- `LiteLLMProviderCatalog` reads local LiteLLM SDK provider/field metadata and merges it with the trusted JARVIS Provider Registry.
+- A catalog entry does not become an executable adapter or authorized Connection merely because LiteLLM recognizes its provider ID.
+- `ConnectionManager.ai_catalog()` provides read-only, non-secret descriptors.
+- The QThread Connection worker loads catalog metadata without blocking the GUI thread.
+- The Integrations UI now uses one generic schema-driven Connection form in place of the separate Anthropic and Gemini forms.
+- The autocomplete exposes the LiteLLM catalog and marks unsupported providers as catalog-only and non-selectable.
+- Existing per-Connection Windows Credential Manager boundary, verifier/diagnostic, profile bindings and explicit inference selection are unchanged.
+- Added catalog-focused tests in `tests/test_ai_catalog_tb04.py`.
+
+**Validation status:** code published; focused tests, full regression, production frontend build and Windows credential/Desktop smoke have not yet been executed in the owner's environment. Do not mark TB-04E2 or TB-04 as Product Done.
+
+See `docs/implementation/TB-04E2-Dynamic-AI-Provider-Catalog.md` for the trust boundary and remaining acceptance gate.
