@@ -19,6 +19,15 @@ class ProviderDescriptor:
     transport: str = "native"
     litellm_prefix: str | None = None
 
+    def supports_ai_api_key_connection(self) -> bool:
+        """Trusted local contract, not an SDK catalog-derived permission."""
+        return (
+            self.provider_type == "ai_inference"
+            and self.transport == "litellm"
+            and self.litellm_prefix == self.provider_id
+            and "api_key" in self.supported_auth_methods
+        )
+
     def as_dict(self) -> dict:
         data = asdict(self)
         for key in (
