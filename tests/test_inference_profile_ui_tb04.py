@@ -128,17 +128,49 @@ def test_send_only_validates_resolved_profile_and_does_not_edit_it():
     assert "updateInferenceProfile" not in selection
     assert "selectAIConnection" not in selection
 
-def test_integrations_exposes_gemini_without_provider_specific_adapter_ui():
+def test_integrations_exposes_ai_connections_through_generic_catalog_form():
+    """E2: providers are metadata, not provider-specific Vue source code."""
+    from jarvis.connections.catalog import LiteLLMProviderCatalog
+    from jarvis.connections.registry import ProviderRegistry
+
+    gemini = ProviderRegistry().get("gemini")
+    assert gemini is not None
+    assert gemini.display_name == "Google Gemini"
+    assert gemini.provider_type == "ai_inference"
+    assert gemini.litellm_prefix == "gemini"
+
+    # SDK metadata absence must not disable a trusted, registered connection.
+    items = LiteLLMProviderCatalog(
+        litellm_module=type("OfflineSDK", (), {"provider_list": ()})()
+    ).list()
+    assert any(item["provider_id"] == "gemini" and item["connectable"]
+               for item in items)
+
     value = source()
-    assert "Google Gemini" in value
-    assert 'v-model="geminiToken"' in value
-    assert 'label="Gemini API key"' in value
-    assert '@click="configureGemini"' in value
-    configure = value.split("async function configureGemini() {", 1)[1].split(
-        "\nfunction chooseModelForConnection", 1
-    )[0]
-    assert "'configureAIConnection', 'gemini'" in configure
-    assert "geminiToken.value = ''" in configure
+    assert "'loadAIProviderCatalog'" in value
+    assert 'v-model="newAIProviderId"' in value
+    assert ':items="allAIProviderItems"' in value
+    assert 'v-for="field in selectedAIProviderCatalog?.connection_fields || []"' in value
+    assert 'v-model="newAIFields[field.key]"' in value
+    assert ':disabled="integrationBusy || !requiredAIFieldsPresent"' in value
+    assert '@click="configureSelectedAIProvider"' in value
+
+    configure = value.split(
+        "async function configureSelectedAIProvider() {", 1
+    )[1].split("\nfunction chooseModelForConnection", 1)[0]
+    assert "'configureAIConnection', providerId, label, apiKey" in configure
+    assert "newAIFields.value = {}" in configure
+
+    # Adding a provider must not require a new hard-coded credential form.
+    for legacy in (
+        'v-model="geminiToken"',
+        'v-model="anthropicToken"',
+        'label="Gemini API key"',
+        '@click="configureGemini"',
+        '@click="configureAnthropic"',
+    ):
+        assert legacy not in value
+
 
 def test_ai_connection_cards_expose_provider_neutral_litellm_diagnostics():
     value = source()
