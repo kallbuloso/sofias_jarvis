@@ -40,10 +40,22 @@ const aiDiagnosticModels = ref({})
 const aiDiagnostics = ref({})
 const githubLabel = ref('')
 const githubToken = ref('')
-const anthropicLabel = ref('')
-const anthropicToken = ref('')
-const geminiLabel = ref('')
-const geminiToken = ref('')
+const aiCatalog = ref([])
+const catalogBusy = ref(false)
+const newAIProviderId = ref('')
+const newAILabel = ref('')
+const newAIFields = ref({})
+const configurableAIProviderItems = computed(() =>
+  aiCatalog.value.filter(item => item.connectable).map(item => ({
+    title: item.display_name, value: item.provider_id,
+  }))
+)
+const selectedAIProviderCatalog = computed(() =>
+  aiCatalog.value.find(item => item.provider_id === newAIProviderId.value)
+)
+const catalogOnlyCount = computed(() =>
+  aiCatalog.value.filter(item => !item.connectable).length
+)
 const aiProvider = ref('openai')
 const aiConnectionId = ref('')
 const aiModelPreferences = ref({})
@@ -266,8 +278,22 @@ function handleStream(raw) {
   if (event.type === 'integration_connection') {
     integrationBusy.value = false
     githubToken.value = ''
-    anthropicToken.value = ''
-    geminiToken.value = ''
+    if (event.action === 'load_catalog') {
+      catalogBusy.value = false
+      if (event.ok && Array.isArray(event.catalog)) {
+        aiCatalog.value = event.catalog
+        if (!selectedAIProviderCatalog.value?.connectable) {
+          newAIProviderId.value = configurableAIProviderItems.value[0]?.value || ''
+        }
+        integrationNotice.value = 'Catálogo LiteLLM carregado. ' +
+          catalogOnlyCount.value + ' providers apenas catalogados.'
+      } else {
+        warning.value = 'Catálogo LiteLLM indisponível: ' +
+          (event.error || 'unknown')
+      }
+      return
+    }
+    newAIFields.value = {}
     if (!event.ok) {
       warning.value = 'Falha na conexão: ' + (event.error || 'unknown')
       integrationNotice.value = ''
@@ -913,6 +939,21 @@ async function openIntegrations() {
       refreshIntegrations(),
       refreshInferenceProfiles(),
     ])
+    catalogBusy.value = true
+    integrationBusy.value = true
+    try {
+      const started = await call('loadAIProviderCatalog')
+      if (!started.ok) {
+        catalogBusy.value = false
+        integrationBusy.value = false
+        warning.value = 'Falha ao solicitar catálogo: ' +
+          (started.error || 'unknown')
+      }
+    } catch {
+      catalogBusy.value = false
+      integrationBusy.value = false
+      warning.value = 'Não foi possível carregar o catálogo de IA.'
+    }
     if (!profileProvider.value) {
       profileProvider.value = aiProvider.value || aiProviderItems.value[0]?.value || ''
     }
@@ -931,47 +972,29 @@ async function openIntegrations() {
   }
 }
 
-async function configureAnthropic() {
-  if (integrationBusy.value || !anthropicToken.value.trim()) return
-  integrationBusy.value = true
-  warning.value = ''
-  const token = anthropicToken.value
-  try {
-    const result = await call(
-      'configureAIConnection', 'anthropic', anthropicLabel.value.trim(), token,
-    )
-    anthropicToken.value = ''
-    if (!result.ok) {
-      integrationBusy.value = false
-      warning.value = 'Configuração Anthropic recusada: ' +
-        (result.error || 'unknown')
-    }
-  } catch {
-    anthropicToken.value = ''
-    integrationBusy.value = false
-    warning.value = 'Não foi possível entregar a credencial Anthropic ao Core.'
+async function configureSelectedAIProvider() {
+  if (integrationBusy.value || !selectedAIProviderCatalog.value?.connectable) return
+  const apiKey = newAIFields.value.api_key
+  if (typeof apiKey !== 'string' || !apiKey.trim()) {
+    warning.value = 'Informe a credencial exigida para esta Connection.'
+    return
   }
-}
-
-async function configureGemini() {
-  if (integrationBusy.value || !geminiToken.value.trim()) return
   integrationBusy.value = true
   warning.value = ''
-  const token = geminiToken.value
+  const providerId = newAIProviderId.value
+  const label = newAILabel.value.trim()
   try {
-    const result = await call(
-      'configureAIConnection', 'gemini', geminiLabel.value.trim(), token,
-    )
-    geminiToken.value = ''
+    const result = await call('configureAIConnection', providerId, label, apiKey)
+    // Never retain a submitted key in Vue state.
+    newAIFields.value = {}
     if (!result.ok) {
       integrationBusy.value = false
-      warning.value = 'Configuração Gemini recusada: ' +
-        (result.error || 'unknown')
+      warning.value = 'Configuração recusada: ' + (result.error || 'unknown')
     }
   } catch {
-    geminiToken.value = ''
+    newAIFields.value = {}
     integrationBusy.value = false
-    warning.value = 'Não foi possível entregar a credencial Gemini ao Core.'
+    warning.value = 'Não foi possível entregar a credencial ao Core.'
   }
 }
 
@@ -1438,30 +1461,56 @@ onMounted(async () => {
             {{ integrationNotice }}
           </div>
           <div class="integration-section mb-4">
-            <strong>Anthropic</strong>
-            <div class="small-text">
-              API key · armazenada somente no Windows Credential Manager.
+            <div class="small-text mb-3">
+              Catálogo descoberto pelo LiteLLM. Somente providers com adapter
+              de Connection validado no JARVIS podem ser conectados.
+              Segredos ficam no Windows Credential Manager.
             </div>
-            <v-text-field v-model="anthropicLabel" label="Identificação opcional"
-              variant="outlined" density="compact" class="mt-4"/>
-            <v-text-field v-model="anthropicToken" label="Anthropic API key"
-              type="password" autocomplete="off" variant="outlined" density="compact"/>
-            <v-btn color="primary" :loading="integrationBusy"
-              :disabled="integrationBusy || !anthropicToken.trim()"
-              @click="configureAnthropic">Conectar Anthropic</v-btn>
-          </div>
-          <div class="integration-section mb-4">
-            <strong>Google Gemini</strong>
-            <div class="small-text">
-              Gemini API key · armazenada somente no Windows Credential Manager.
+            <div v-if="catalogBusy" class="small-text mb-3">
+              Carregando metadados de providers…
             </div>
-            <v-text-field v-model="geminiLabel" label="Identificação opcional"
-              variant="outlined" density="compact" class="mt-4"/>
-            <v-text-field v-model="geminiToken" label="Gemini API key"
-              type="password" autocomplete="off" variant="outlined" density="compact"/>
+            <v-select v-model="newAIProviderId"
+              :items="configurableAIProviderItems"
+              label="Novo AI Provider"
+              :disabled="integrationBusy"
+              variant="outlined" density="compact" hide-details
+              class="mb-3"
+              @update:model-value="newAIFields = {}"/>
+            <v-text-field v-model="newAILabel"
+              label="Identificação opcional"
+              :disabled="integrationBusy || !newAIProviderId"
+              variant="outlined" density="compact"/>
+            <template v-for="field in selectedAIProviderCatalog?.connection_fields || []"
+              :key="field.key">
+              <v-select v-if="field.field_type === 'select'"
+                v-model="newAIFields[field.key]"
+                :items="field.options"
+                :label="field.label"
+                :disabled="integrationBusy"
+                variant="outlined" density="compact"/>
+              <v-textarea v-else-if="field.field_type === 'textarea'"
+                v-model="newAIFields[field.key]"
+                :label="field.label"
+                :disabled="integrationBusy"
+                variant="outlined" density="compact"/>
+              <v-text-field v-else
+                v-model="newAIFields[field.key]"
+                :label="field.label"
+                :type="field.field_type === 'password' ? 'password' : 'text'"
+                autocomplete="off" :disabled="integrationBusy"
+                variant="outlined" density="compact"/>
+            </template>
             <v-btn color="primary" :loading="integrationBusy"
-              :disabled="integrationBusy || !geminiToken.trim()"
-              @click="configureGemini">Conectar Gemini</v-btn>
+              :disabled="integrationBusy || !selectedAIProviderCatalog?.connectable ||
+                !newAIFields.api_key?.trim()"
+              @click="configureSelectedAIProvider">
+              Conectar AI Provider
+            </v-btn>
+            <div v-if="catalogOnlyCount" class="small-text mt-3">
+              {{ catalogOnlyCount }} providers conhecidos pelo LiteLLM ainda
+              não possuem contrato de Connection/credenciais implementado
+              no JARVIS; não estão disponíveis para ativação.
+            </div>
           </div>
           <div v-if="!integrationConnections.some(
               item => item.provider_type === 'ai_inference')" class="small-text">
