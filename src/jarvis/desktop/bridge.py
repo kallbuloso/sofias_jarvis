@@ -1236,6 +1236,79 @@ class JarvisBridge(QObject):
             "profile": self._public_inference_profile(updated),
         })
 
+    @Slot(str, str, str, str, str, str, result=str)
+    def updateInferenceProfile(
+        self, profile_id: str, name: str, slug: str,
+        provider_id: str, connection_id: str, model: str,
+    ) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            profile_id = str(UUID(profile_id))
+            connection_id = str(UUID(connection_id))
+        except (TypeError, ValueError, AttributeError):
+            return _json({"ok": False, "error": "invalid_identifier"})
+        if not isinstance(model, str) or not model.strip():
+            return _json({"ok": False, "error": "missing_model"})
+        try:
+            item, _ = self._connection_manager().resolve_ai_connection(
+                provider_id=provider_id,
+                connection_id=connection_id,
+                model_id=model.strip(),
+            )
+            from jarvis.inference.profiles import InferenceProfileStore
+            profiles = InferenceProfileStore(database_path())
+            updated = profiles.update_profile(
+                profile_id,
+                name=name,
+                slug=slug,
+                connection_id=connection_id,
+                model=model.strip(),
+            )
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
+        if updated["slug"] == "general":
+            self._active_ai_provider = item["provider_id"]
+            self._active_ai_connection_id = item["id"]
+            try:
+                save_ai_selection(provider_id, connection_id, model.strip())
+                if provider_id == "openai":
+                    save_preferred_model(model.strip())
+            except (OSError, ValueError) as exc:
+                trace(
+                    "desktop_ai_preference_write_failed",
+                    error_class=type(exc).__name__,
+                )
+
+        return _json({
+            "ok": True,
+            "profile": self._public_inference_profile(updated),
+        })
+
+    @Slot(str, result=str)
+    def deleteInferenceProfile(self, profile_id: str) -> str:
+        if self.active or self._closing:
+            return _json({"ok": False, "error": "busy"})
+        try:
+            profile_id = str(UUID(profile_id))
+            from jarvis.inference.profiles import InferenceProfileStore
+            removed = InferenceProfileStore(database_path()).delete_profile(
+                profile_id
+            )
+            return _json({
+                "ok": bool(removed),
+                "error": None if removed else "INFERENCE_PROFILE_NOT_FOUND",
+            })
+        except Exception as exc:
+            return _json({
+                "ok": False,
+                "error": getattr(exc, "code", str(exc) or type(exc).__name__),
+            })
+
     @Slot(str, str, result=str)
     def configureGitHubConnection(self, label: str, token: str) -> str:
         if not isinstance(token, str) or not token.strip():
@@ -1335,11 +1408,18 @@ class JarvisBridge(QObject):
             )
         except Exception:
             connection = None
+        from jarvis.inference.profiles import InferenceProfileStore
+        binding_count = InferenceProfileStore(database_path()).binding_count(
+            profile["id"]
+        )
         return {
             "id": profile["id"],
             "slug": profile["slug"],
             "name": profile["name"],
             "enabled": profile["enabled"],
+            "bindingCount": binding_count,
+            "reserved": profile["slug"] == "general",
+            "deletable": profile["slug"] != "general" and binding_count == 0,
             "connectionId": primary.get("connection_id"),
             "providerId": connection.get("provider_id") if connection else None,
             "model": primary.get("model"),
