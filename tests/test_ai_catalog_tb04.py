@@ -192,3 +192,29 @@ def test_catalog_metadata_does_not_override_trusted_connection_contract():
     assert [field["key"] for field in gemini["connection_fields"]] == ["api_key"]
     assert "SENSITIVE" not in str(gemini)
     assert by_id["groq"]["connectable"] is False
+
+
+def test_untrusted_auth_method_cannot_bypass_catalog_at_manager(tmp_path):
+    from dataclasses import replace
+    import pytest
+    from jarvis.connections.manager import ConnectionManager
+    from jarvis.connections.store import ConnectionStore
+
+    store = ConnectionStore(tmp_path / "jarvis.sqlite3")
+    vault = _FakeVault()
+    manager = ConnectionManager(store, vault)
+    current = manager.registry.get("gemini")
+    manager.registry._providers["gemini"] = replace(
+        current, supported_auth_methods=("oauth",),
+    )
+
+    assert next(
+        item for item in LiteLLMProviderCatalog(
+            registry=manager.registry, litellm_module=_sdk(),
+        ).list() if item["provider_id"] == "gemini"
+    )["connectable"] is False
+
+    with pytest.raises(ValueError, match="AI_CONNECTION_METHOD_UNSUPPORTED"):
+        manager.create_ai("gemini", "PRIVATE-KEY")
+    assert store.list() == []
+    assert vault.secrets == {}
