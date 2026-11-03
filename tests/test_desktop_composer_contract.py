@@ -21,8 +21,13 @@ def test_submit_can_create_first_conversation_after_history_was_cleared():
     assert "if (!conversationId) {" in submit
     assert "await call('createConversation')" in submit
     assert "await call('sendConversationalMessage'," in submit
+    assert "await refreshConversationInference(conversationId)" in submit
+    assert "await ensureAISelection()" in submit
     assert submit.index("busy.value = true") < submit.index(
         "await call('createConversation')"
+    )
+    assert submit.index("await call('createConversation')") < submit.index(
+        "await refreshConversationInference(conversationId)"
     )
 
 
@@ -36,8 +41,9 @@ def test_click_and_keyboard_share_send_with_no_selected_gate():
     assert "!selected" not in button
 
 
-def test_missing_model_cannot_fail_silently():
+def test_missing_resolved_profile_cannot_fail_silently():
     source = composer_source()
-    assert "Informe o modelo de IA antes de enviar a mensagem." in source
+    assert "Nenhum perfil de inferência válido está resolvido" in source
+    assert "A Connection do perfil selecionado não está disponível." in source
     assert "draft.value = text" in source
     assert "O JARVIS criará a conversa ao enviar." in source
