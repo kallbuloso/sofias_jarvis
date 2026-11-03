@@ -50,11 +50,25 @@ const configurableAIProviderItems = computed(() =>
     title: item.display_name, value: item.provider_id,
   }))
 )
+const allAIProviderItems = computed(() =>
+  aiCatalog.value.map(item => ({
+    title: item.display_name + (item.connectable ? '' : ' · catálogo apenas'),
+    value: item.provider_id,
+    props: { disabled: !item.connectable },
+  }))
+)
 const selectedAIProviderCatalog = computed(() =>
   aiCatalog.value.find(item => item.provider_id === newAIProviderId.value)
 )
 const catalogOnlyCount = computed(() =>
   aiCatalog.value.filter(item => !item.connectable).length
+)
+const requiredAIFieldsPresent = computed(() =>
+  Boolean(selectedAIProviderCatalog.value?.connectable) &&
+    (selectedAIProviderCatalog.value?.connection_fields || [])
+      .filter(field => field.required)
+      .every(field => typeof newAIFields.value[field.key] === 'string' &&
+        Boolean(newAIFields.value[field.key].trim()))
 )
 const aiProvider = ref('openai')
 const aiConnectionId = ref('')
@@ -1469,9 +1483,9 @@ onMounted(async () => {
             <div v-if="catalogBusy" class="small-text mb-3">
               Carregando metadados de providers…
             </div>
-            <v-select v-model="newAIProviderId"
-              :items="configurableAIProviderItems"
-              label="Novo AI Provider"
+            <v-autocomplete v-model="newAIProviderId"
+              :items="allAIProviderItems"
+              label="Buscar AI Provider"
               :disabled="integrationBusy"
               variant="outlined" density="compact" hide-details
               class="mb-3"
@@ -1501,8 +1515,7 @@ onMounted(async () => {
                 variant="outlined" density="compact"/>
             </template>
             <v-btn color="primary" :loading="integrationBusy"
-              :disabled="integrationBusy || !selectedAIProviderCatalog?.connectable ||
-                !newAIFields.api_key?.trim()"
+              :disabled="integrationBusy || !requiredAIFieldsPresent"
               @click="configureSelectedAIProvider">
               Conectar AI Provider
             </v-btn>
