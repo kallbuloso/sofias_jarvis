@@ -36,6 +36,8 @@ const integrationProviders = ref([])
 const integrationConnections = ref([])
 const integrationBusy = ref(false)
 const integrationNotice = ref('')
+const aiDiagnosticModels = ref({})
+const aiDiagnostics = ref({})
 const githubLabel = ref('')
 const githubToken = ref('')
 const anthropicLabel = ref('')
@@ -272,6 +274,15 @@ function handleStream(raw) {
     } else {
       warning.value = ''
       const connection = event.connection
+      if (event.action === 'diagnose_ai' && connection && event.diagnostic) {
+        aiDiagnostics.value = {
+          ...aiDiagnostics.value,
+          [connection.id]: event.diagnostic,
+        }
+        integrationNotice.value =
+          'Diagnóstico LiteLLM concluído para ' +
+          event.diagnostic.qualified_model + '.'
+      }
       if (event.action === 'verify_ai' && connection) {
         const count = Array.isArray(connection.available_models)
           ? connection.available_models.length : 0
@@ -822,6 +833,61 @@ async function confirmDeleteProfile() {
   }
 }
 
+function diagnosticModels(connection) {
+  const models = connection?.configuration?.observed_models
+  return Array.isArray(models) ? models : []
+}
+
+function ensureDiagnosticModel(connection) {
+  const models = diagnosticModels(connection)
+  if (!models.length) return
+  const current = aiDiagnosticModels.value[connection.id]
+  if (!current || !models.includes(current)) {
+    aiDiagnosticModels.value = {
+      ...aiDiagnosticModels.value,
+      [connection.id]: models[0],
+    }
+  }
+}
+
+async function runAIConnectionDiagnostic(connection) {
+  if (integrationBusy.value) return
+  const modelId = aiDiagnosticModels.value[connection.id]
+  if (!modelId) {
+    warning.value = 'Verifique a Connection para descobrir os modelos antes do diagnóstico.'
+    return
+  }
+  integrationBusy.value = true
+  warning.value = ''
+  integrationNotice.value = 'Executando diagnóstico LiteLLM...'
+  try {
+    const result = await call('diagnoseAIConnection', connection.id, modelId)
+    if (!result.ok) {
+      integrationBusy.value = false
+      integrationNotice.value = ''
+      warning.value = 'Diagnóstico recusado: ' + (result.error || 'unknown')
+    }
+  } catch {
+    integrationBusy.value = false
+    integrationNotice.value = ''
+    warning.value = 'Não foi possível iniciar o diagnóstico LiteLLM.'
+  }
+}
+
+function diagnosticStatus(probe) {
+  if (!probe) return 'não executado'
+  if (probe.ok) {
+    const first = probe.first_token_ms != null
+      ? ' · primeiro token ' + probe.first_token_ms + ' ms'
+      : ''
+    return 'OK · ' + probe.elapsed_ms + ' ms' + first
+  }
+  const status = probe.status_code ? ' · HTTP ' + probe.status_code : ''
+  const cause = probe.cause_class ? ' · causa ' + probe.cause_class : ''
+  return (probe.error_code || 'FAILED') + ' · ' + probe.elapsed_ms +
+    ' ms' + status + cause
+}
+
 async function refreshIntegrations() {
   const [providers, connections] = await Promise.all([
     call('listIntegrationProviders'),
@@ -832,6 +898,9 @@ async function refreshIntegrations() {
   }
   integrationProviders.value = providers.items || []
   integrationConnections.value = connections.items || []
+  integrationConnections.value
+    .filter(item => item.provider_type === 'ai_inference')
+    .forEach(ensureDiagnosticModel)
 }
 
 async function openIntegrations() {
