@@ -50,19 +50,25 @@ const configurableAIProviderItems = computed(() =>
     title: item.display_name, value: item.provider_id,
   }))
 )
-const allAIProviderItems = computed(() =>
-  aiCatalog.value.map(item => ({
-    title: item.display_name + (item.connectable ? '' : ' · catálogo apenas'),
-    value: item.provider_id,
-    props: { disabled: !item.connectable },
-  }))
+const catalogSearch = ref('')
+const catalogOnlyItems = computed(() =>
+  aiCatalog.value.filter(item => !item.connectable)
+)
+const filteredCatalogOnlyItems = computed(() => {
+  const term = catalogSearch.value.trim().toLocaleLowerCase('pt-BR')
+  if (!term) return catalogOnlyItems.value
+  return catalogOnlyItems.value.filter(item =>
+    item.display_name.toLocaleLowerCase('pt-BR').includes(term) ||
+    item.provider_id.toLocaleLowerCase('pt-BR').includes(term)
+  )
+})
+const visibleCatalogOnlyItems = computed(() =>
+  filteredCatalogOnlyItems.value.slice(0, 20)
 )
 const selectedAIProviderCatalog = computed(() =>
   aiCatalog.value.find(item => item.provider_id === newAIProviderId.value)
 )
-const catalogOnlyCount = computed(() =>
-  aiCatalog.value.filter(item => !item.connectable).length
-)
+const catalogOnlyCount = computed(() => catalogOnlyItems.value.length)
 const requiredAIFieldsPresent = computed(() =>
   Boolean(selectedAIProviderCatalog.value?.connectable) &&
     (selectedAIProviderCatalog.value?.connection_fields || [])
@@ -1484,8 +1490,8 @@ onMounted(async () => {
               Carregando metadados de providers…
             </div>
             <v-autocomplete v-model="newAIProviderId"
-              :items="allAIProviderItems"
-              label="Buscar AI Provider"
+              :items="configurableAIProviderItems"
+              label="Selecionar AI Provider configurável"
               :disabled="integrationBusy"
               variant="outlined" density="compact" hide-details
               class="mb-3"
@@ -1519,11 +1525,37 @@ onMounted(async () => {
               @click="configureSelectedAIProvider">
               Conectar AI Provider
             </v-btn>
-            <div v-if="catalogOnlyCount" class="small-text mt-3">
-              {{ catalogOnlyCount }} providers conhecidos pelo LiteLLM ainda
-              não possuem contrato de Connection/credenciais implementado
-              no JARVIS; não estão disponíveis para ativação.
-            </div>
+            <v-expansion-panels v-if="catalogOnlyCount" class="mt-4">
+              <v-expansion-panel>
+                <v-expansion-panel-title>
+                  Explorar catálogo LiteLLM ({{ catalogOnlyCount }} não configuráveis)
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                  <div class="small-text mb-3">
+                    Estes providers são reconhecidos pelo SDK, mas o JARVIS
+                    ainda não possui suporte validado para suas conexões.
+                    Consultar o catálogo não habilita credenciais nem inferência.
+                  </div>
+                  <v-text-field v-model="catalogSearch"
+                    label="Filtrar catálogo por nome ou identificador"
+                    variant="outlined" density="compact" clearable
+                    hide-details class="mb-2"/>
+                  <v-list density="compact" bg-color="transparent">
+                    <v-list-item v-for="item in visibleCatalogOnlyItems"
+                      :key="item.provider_id"
+                      :title="item.display_name"
+                      :subtitle="item.provider_id"/>
+                  </v-list>
+                  <div class="small-text mt-2">
+                    {{ filteredCatalogOnlyItems.length }} encontrados ·
+                    {{ visibleCatalogOnlyItems.length }} exibidos
+                    <span v-if="filteredCatalogOnlyItems.length > 20">
+                      · refine a busca para localizar outros providers
+                    </span>
+                  </div>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+            </v-expansion-panels>
           </div>
           <div v-if="!integrationConnections.some(
               item => item.provider_type === 'ai_inference')" class="small-text">
