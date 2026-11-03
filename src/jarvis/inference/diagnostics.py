@@ -7,8 +7,8 @@ to isolate provider-transport behavior in LiteLLM itself.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
+import json
 from time import perf_counter
-from typing import Any
 
 from jarvis.adapters.litellm_inference import (
     _error_code,
@@ -35,6 +35,7 @@ def _result(
     elapsed_ms: int,
     error_code: str | None = None,
     error_class: str | None = None,
+    cause_class: str | None = None,
     status_code: int | None = None,
     detail: str = "",
     first_token_ms: int | None = None,
@@ -44,6 +45,7 @@ def _result(
         "elapsed_ms": int(elapsed_ms),
         "error_code": error_code,
         "error_class": error_class,
+        "cause_class": cause_class,
         "status_code": status_code,
         "detail": detail[:500],
     }
@@ -52,17 +54,33 @@ def _result(
     return value
 
 
-def _failure(exc: Exception, started: float, *, first_token_ms=None) -> dict:
+def _failure(
+    exc: Exception,
+    started: float,
+    *,
+    credential: str,
+    first_token_ms=None,
+) -> dict:
     status = getattr(exc, "status_code", None)
     if not isinstance(status, int):
         status = None
+    cause = getattr(exc, "__cause__", None)
+    detail = _safe_error_detail(exc)
+    if not detail:
+        raw_message = getattr(exc, "message", None)
+        if not isinstance(raw_message, str) or not raw_message.strip():
+            raw_message = str(exc)
+        detail = raw_message.strip()
+    if credential:
+        detail = detail.replace(credential, "[REDACTED]")
     return _result(
         ok=False,
         elapsed_ms=round((perf_counter() - started) * 1000),
         error_code=_error_code(exc),
         error_class=type(exc).__name__,
+        cause_class=type(cause).__name__ if cause is not None else None,
         status_code=status,
-        detail=_safe_error_detail(exc),
+        detail=" ".join(detail.split())[:500],
         first_token_ms=first_token_ms,
     )
 
@@ -135,7 +153,7 @@ class LiteLLMConnectionDiagnostics:
                 elapsed_ms=round((perf_counter() - started) * 1000),
             )
         except Exception as exc:
-            return _failure(exc, started)
+            return _failure(exc, started, credential=self.credential)
 
     def structured(self, model: str) -> dict:
         started = perf_counter()
@@ -168,12 +186,15 @@ class LiteLLMConnectionDiagnostics:
             content = getattr(message, "content", None) if message else None
             if not isinstance(content, str) or not content.strip():
                 raise ValueError("empty diagnostic structured response")
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict) or parsed.get("ok") is not True:
+                raise ValueError("unexpected diagnostic structured response")
             return _result(
                 ok=True,
                 elapsed_ms=round((perf_counter() - started) * 1000),
             )
         except Exception as exc:
-            return _failure(exc, started)
+            return _failure(exc, started, credential=self.credential)
 
     def streaming(self, model: str) -> dict:
         started = perf_counter()
@@ -214,7 +235,10 @@ class LiteLLMConnectionDiagnostics:
             )
         except Exception as exc:
             return _failure(
-                exc, started, first_token_ms=first_token_ms,
+                exc,
+                started,
+                credential=self.credential,
+                first_token_ms=first_token_ms,
             )
 
     def run(self, model: str) -> dict:
