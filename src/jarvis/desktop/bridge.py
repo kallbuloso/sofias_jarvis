@@ -864,6 +864,13 @@ class IntegrationConnectionWorker(QObject):
                     self.payload["token"],
                     label=self.payload.get("label", ""),
                 )
+            elif self.action == "load_catalog":
+                result = {
+                    "ok": True,
+                    "action": self.action,
+                    "catalog": manager.ai_catalog(),
+                }
+                item = None
             elif self.action == "verify_ai":
                 item = manager.verify_ai(self.payload["connection_id"])
             elif self.action == "inspect":
@@ -895,7 +902,7 @@ class IntegrationConnectionWorker(QObject):
                 item = None
             else:
                 raise ValueError("unsupported_connection_worker_action")
-            if self.action != "diagnose_ai":
+            if self.action not in {"diagnose_ai", "load_catalog"}:
                 result = {
                     "ok": True,
                     "action": self.action,
@@ -1098,6 +1105,11 @@ class JarvisBridge(QObject):
         return ConnectionManager(
             ConnectionStore(database_path()), WindowsCredentialStore(),
         )
+
+    @Slot(result=str)
+    def loadAIProviderCatalog(self) -> str:
+        """Load potentially large SDK metadata off the Qt GUI thread."""
+        return self._start_connection_worker("load_catalog", {})
 
     @Slot(result=str)
     def listIntegrationProviders(self) -> str:
