@@ -1317,3 +1317,33 @@ Deliberately not implemented in this checkpoint:
 This checkpoint requires focused regression, full Python regression, frontend
 production build and a Windows desktop smoke before acceptance.
 
+## 35. TB-04D7 profile ownership correction — 2026-11-03
+
+Owner smoke exposed two UI/policy inconsistencies in the first D7 surface:
+
+1. profile creation inherited the toolbar's current Connection/model implicitly
+   and therefore did not let the owner explicitly choose OpenAI vs Anthropic;
+2. selecting a Conversation profile changed runtime resolution but did not
+   synchronize the Provider / Connection / Model fields, making the UI display
+   a physical selection different from the effective resolved plan.
+
+The correction establishes a clearer ownership rule:
+
+- every inference profile owns its own Provider Connection + model target;
+- the new-profile form has dedicated Provider, Connection and Model controls;
+- selecting/inheriting a Conversation profile immediately synchronizes the
+  toolbar to the effective ResolvedInferencePlan;
+- the toolbar edits the **effective profile**:
+  - inherited Conversation → global `general`;
+  - Conversation binding → that bound profile;
+- `selectAIConnection()` remains compatibility/rollback behavior, but normal
+  profile-aware UI dispatch no longer uses it to rewrite `general`;
+- `updateInferenceProfilePrimary()` explicitly edits one chosen profile;
+- unchanged resolved settings are not rewritten on every message;
+- an explicit `Salvar perfil` action allows correcting an existing profile
+  without sending a chat message;
+- editing a bound profile does not mutate `general`.
+
+This correction keeps the resolver precedence and LiteLLM execution path
+unchanged. It fixes UI truthfulness and profile ownership semantics only.
+
