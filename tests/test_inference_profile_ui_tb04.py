@@ -83,3 +83,15 @@ def test_resolved_profile_synchronizes_toolbar_provider_connection_and_model():
         "async function onConversationProfileChanged(profileId) {", 1
     )[1].split("\nfunction onProfileProviderChanged", 1)[0]
     assert "applyResolvedInference(result.resolved" in change
+
+def test_unchanged_resolved_profile_is_not_rewritten_on_every_send():
+    value = source()
+    selection = value.split("async function ensureAISelection() {", 1)[1].split(
+        "\nasync function configureGitHub()", 1
+    )[0]
+    assert "const alreadyResolved = (" in selection
+    assert "if (alreadyResolved)" in selection
+    assert selection.index("if (alreadyResolved)") < selection.index(
+        "'updateInferenceProfilePrimary'"
+    )
+
