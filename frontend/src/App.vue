@@ -1342,9 +1342,10 @@ onMounted(async () => {
 
           <div class="heading mb-2">Perfis de inferência</div>
           <div class="small-text mb-3">
-            Um perfil aponta para uma Connection e um modelo. O perfil global
-            <strong>Geral</strong> é editado pelos seletores do topo; perfis
-            adicionais podem ser vinculados a conversas específicas.
+            Um perfil aponta para um Provider, uma Connection e um modelo.
+            Os seletores do topo refletem e editam o perfil efetivo da conversa:
+            <strong>Geral</strong> quando herdado, ou o perfil específico quando
+            houver um binding de Conversation.
           </div>
           <v-card v-for="profile in inferenceProfiles" :key="profile.id"
             variant="outlined" class="mb-2">
