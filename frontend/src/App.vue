@@ -1018,11 +1018,6 @@ async function startVoice(event) {
   if (!ready.value || busy.value || voiceStarting.value ||
       voiceState.value !== 'IDLE' || memoryPreviewBusy.value ||
       memoryMutationBusy.value || createDialog.value || createBusy.value) return
-  if (!model.value.trim()) {
-    warning.value = 'Informe o modelo de IA antes de usar voz.'
-    return
-  }
-  if (!await ensureAISelection()) return
   voiceStarting.value = true
   voiceReleasePending.value = false
   warning.value = ''
@@ -1036,6 +1031,11 @@ async function startVoice(event) {
       selected.value = conversationId
       messages.value = []
       await refreshConversations()
+    }
+    await refreshConversationInference(conversationId)
+    if (!await ensureAISelection()) {
+      voiceState.value = 'IDLE'
+      return
     }
     const result = await call('startVoiceCapture', conversationId)
     if (!result.ok) {
@@ -1097,12 +1097,6 @@ async function sendMessage() {
       !text) return
 
   const legacyMutation = /^\/(?:esquecer|atualizar)(?:\s|$)/i.test(text)
-  if (!legacyMutation && !model.value.trim()) {
-    warning.value = 'Informe o modelo de IA antes de enviar a mensagem.'
-    return
-  }
-
-  if (!legacyMutation && !await ensureAISelection()) return
 
   // Acquire the send lock before awaiting Qt: Ctrl+Enter and click must not
   // create two conversations or dispatch the same message twice.
@@ -1124,6 +1118,14 @@ async function sendMessage() {
       selected.value = conversationId
       messages.value = []
       await refreshConversations()
+    }
+
+    if (!legacyMutation) {
+      await refreshConversationInference(conversationId)
+      if (!await ensureAISelection()) {
+        busy.value = false
+        return
+      }
     }
 
     if (legacyMutation) {
