@@ -53,6 +53,16 @@ const profileProvider = ref('')
 const profileConnectionId = ref('')
 const profileModel = ref('')
 const profileCreateBusy = ref(false)
+const profileEditDialog = ref(false)
+const profileEditTarget = ref(null)
+const profileEditName = ref('')
+const profileEditSlug = ref('')
+const profileEditProvider = ref('')
+const profileEditConnectionId = ref('')
+const profileEditModel = ref('')
+const profileEditBusy = ref(false)
+const profileDeleteTarget = ref(null)
+const profileDeleteBusy = ref(false)
 const inferenceProfileItems = computed(() => [
   { title: 'Herdar do perfil global', value: '' },
   ...inferenceProfiles.value
@@ -111,6 +121,23 @@ const selectedProfileConnection = computed(() =>
 )
 const profileModelItems = computed(() => {
   const models = selectedProfileConnection.value?.configuration?.observed_models
+  return Array.isArray(models) ? models : []
+})
+const profileEditConnectionItems = computed(() =>
+  aiConnections.value
+    .filter(item => item.provider_id === profileEditProvider.value)
+    .map(item => ({
+      title: item.configuration?.label || item.provider_name || item.id,
+      value: item.id,
+    }))
+)
+const selectedProfileEditConnection = computed(() =>
+  integrationConnections.value.find(
+    item => item.id === profileEditConnectionId.value
+  )
+)
+const profileEditModelItems = computed(() => {
+  const models = selectedProfileEditConnection.value?.configuration?.observed_models
   return Array.isArray(models) ? models : []
 })
 // Render only a small, explicitly supported subset of inline Markdown.
@@ -586,13 +613,6 @@ function applyResolvedInference(plan) {
   }
 }
 
-function effectiveInferenceProfileId() {
-  if (resolvedInference.value?.profile_id) {
-    return resolvedInference.value.profile_id
-  }
-  return inferenceProfiles.value.find(item => item.slug === 'general')?.id || ''
-}
-
 async function refreshInferenceProfiles() {
   const result = await call('listInferenceProfiles')
   if (!result.ok) throw new Error(result.error || 'profiles_unavailable')
@@ -699,6 +719,106 @@ async function createInferenceProfile() {
   }
 }
 
+function openProfileEditor(profile) {
+  profileEditTarget.value = profile
+  profileEditName.value = profile.name || ''
+  profileEditSlug.value = profile.slug || ''
+  profileEditProvider.value = profile.providerId || ''
+  profileEditConnectionId.value = profile.connectionId || ''
+  profileEditModel.value = profile.model || ''
+  profileEditDialog.value = true
+}
+
+function onProfileEditProviderChanged(providerId) {
+  profileEditProvider.value = providerId || ''
+  const first = aiConnections.value.find(
+    item => item.provider_id === profileEditProvider.value
+  )
+  profileEditConnectionId.value = first?.id || ''
+  profileEditModel.value = chooseModelForConnection(
+    profileEditProvider.value, first,
+  )
+}
+
+function onProfileEditConnectionChanged(connectionId) {
+  profileEditConnectionId.value = connectionId || ''
+  const connection = integrationConnections.value.find(
+    item => item.id === profileEditConnectionId.value
+  )
+  if (connection) {
+    profileEditProvider.value = connection.provider_id
+    profileEditModel.value = chooseModelForConnection(
+      connection.provider_id, connection,
+    )
+  } else {
+    profileEditModel.value = ''
+  }
+}
+
+async function saveProfileEdit() {
+  const target = profileEditTarget.value
+  if (!target || profileEditBusy.value ||
+      !profileEditName.value.trim() || !profileEditSlug.value.trim() ||
+      !profileEditProvider.value || !profileEditConnectionId.value ||
+      !profileEditModel.value.trim()) return
+  profileEditBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call(
+      'updateInferenceProfile',
+      target.id,
+      profileEditName.value.trim(),
+      profileEditSlug.value.trim(),
+      profileEditProvider.value,
+      profileEditConnectionId.value,
+      profileEditModel.value.trim(),
+    )
+    if (!result.ok) {
+      warning.value = 'Não foi possível editar o perfil: ' +
+        (result.error || 'unknown')
+      return
+    }
+    profileEditDialog.value = false
+    profileEditTarget.value = null
+    await refreshInferenceProfiles()
+    if (selected.value) {
+      await refreshConversationInference(selected.value).catch(() => {})
+    }
+    integrationNotice.value = 'Perfil atualizado.'
+  } catch {
+    warning.value = 'Falha ao editar o perfil de inferência.'
+  } finally {
+    profileEditBusy.value = false
+  }
+}
+
+function requestDeleteProfile(profile) {
+  if (!profile?.deletable || profileDeleteBusy.value) return
+  profileDeleteTarget.value = profile
+}
+
+async function confirmDeleteProfile() {
+  const target = profileDeleteTarget.value
+  if (!target || profileDeleteBusy.value) return
+  profileDeleteBusy.value = true
+  warning.value = ''
+  try {
+    const result = await call('deleteInferenceProfile', target.id)
+    if (!result.ok) {
+      warning.value = 'Não foi possível excluir o perfil: ' +
+        (result.error || 'unknown')
+      return
+    }
+    profileDeleteTarget.value = null
+    await refreshInferenceProfiles()
+    integrationNotice.value = 'Perfil excluído.'
+  } catch {
+    warning.value = 'Falha ao excluir o perfil de inferência.'
+  } finally {
+    profileDeleteBusy.value = false
+  }
+}
+
 async function refreshIntegrations() {
   const [providers, connections] = await Promise.all([
     call('listIntegrationProviders'),
@@ -789,69 +909,18 @@ function onAIConnectionChanged(connectionId) {
 }
 
 async function ensureAISelection() {
-  if (!aiProvider.value || !aiConnectionId.value || !model.value.trim()) {
-    warning.value = 'Selecione Provider, conexão e modelo de IA.'
+  if (!resolvedInference.value?.profile_id ||
+      !resolvedInference.value?.provider_id ||
+      !resolvedInference.value?.connection_id ||
+      !resolvedInference.value?.model) {
+    warning.value = 'Nenhum perfil de inferência válido está resolvido para esta conversa.'
     return false
   }
-  const profileId = effectiveInferenceProfileId()
-  if (!profileId) {
-    warning.value = 'Nenhum perfil de inferência efetivo está disponível.'
+  if (!credentialConfigured.value) {
+    warning.value = 'A Connection do perfil selecionado não está disponível.'
     return false
   }
-
-  const alreadyResolved = (
-    resolvedInference.value?.profile_id === profileId &&
-    resolvedInference.value?.provider_id === aiProvider.value &&
-    resolvedInference.value?.connection_id === aiConnectionId.value &&
-    resolvedInference.value?.model === model.value.trim()
-  )
-  if (alreadyResolved) {
-    return true
-  }
-
-  try {
-    const result = await call(
-      'updateInferenceProfilePrimary',
-      profileId,
-      aiProvider.value,
-      aiConnectionId.value,
-      model.value.trim(),
-    )
-    if (!result.ok) {
-      warning.value = 'Configuração do perfil recusada: ' +
-        (result.error || 'unknown')
-      credentialConfigured.value = false
-      return false
-    }
-    aiModelPreferences.value = {
-      ...aiModelPreferences.value,
-      [aiProvider.value]: model.value.trim(),
-    }
-    credentialConfigured.value = true
-    await refreshInferenceProfiles()
-    if (selected.value) {
-      await refreshConversationInference(selected.value)
-    }
-    return true
-  } catch {
-    warning.value = 'Não foi possível atualizar o perfil de inferência.'
-    return false
-  }
-}
-
-async function saveEffectiveInferenceProfile() {
-  if (busy.value || inferenceProfileBusy.value) return
-  inferenceProfileBusy.value = true
-  warning.value = ''
-  try {
-    const ok = await ensureAISelection()
-    if (!ok) return
-    if (selected.value) {
-      await refreshConversationInference(selected.value)
-    }
-  } finally {
-    inferenceProfileBusy.value = false
-  }
+  return true
 }
 
 async function configureGitHub() {
@@ -1173,43 +1242,6 @@ onMounted(async () => {
                 hide-details
                 :disabled="busy || inferenceProfileBusy || !selected"
                 @update:model-value="onConversationProfileChanged"/>
-              <v-select
-                v-model="aiProvider"
-                :items="aiProviderItems"
-                label="Provider"
-                variant="outlined"
-                density="compact"
-                hide-details
-                :disabled="busy"
-                @update:model-value="onAIProviderChanged"/>
-              <v-select
-                v-model="aiConnectionId"
-                :items="aiConnectionItems"
-                label="Conexão"
-                variant="outlined"
-                density="compact"
-                hide-details
-                :disabled="busy || !aiProvider"
-                @update:model-value="onAIConnectionChanged"/>
-              <v-select v-if="aiModelItems.length"
-                v-model="model"
-                :items="aiModelItems"
-                class="model-input"
-                label="Modelo de IA"
-                variant="outlined" density="compact" hide-details/>
-              <v-text-field v-else v-model="model" class="model-input"
-                label="Modelo de IA"
-                variant="outlined" density="compact" hide-details
-                placeholder="Digite o modelo habilitado"/>
-              <v-btn
-                variant="outlined"
-                color="primary"
-                :loading="inferenceProfileBusy"
-                :disabled="busy || inferenceProfileBusy || !aiProvider ||
-                  !aiConnectionId || !model.trim()"
-                @click="saveEffectiveInferenceProfile">
-                Salvar perfil
-              </v-btn>
             </div>
           </div>
           <div v-if="!credentialConfigured" class="inline-alert" role="alert">
@@ -1367,17 +1399,38 @@ onMounted(async () => {
           <div class="heading mb-2">Perfis de inferência</div>
           <div class="small-text mb-3">
             Um perfil aponta para um Provider, uma Connection e um modelo.
-            Os seletores do topo refletem e editam o perfil efetivo da conversa:
-            <strong>Geral</strong> quando herdado, ou o perfil específico quando
-            houver um binding de Conversation.
+            Edite ou exclua perfis nesta área. Na conversa principal o usuário
+            apenas escolhe qual perfil aquela Conversation utilizará.
           </div>
           <v-card v-for="profile in inferenceProfiles" :key="profile.id"
             variant="outlined" class="mb-2">
             <v-card-text>
-              <strong>{{ profile.name }}</strong>
-              <div class="small-text">
-                {{ profile.slug }} · {{ profile.providerId }}/{{ profile.model }}
-                <span v-if="profile.slug === 'general'"> · global</span>
+              <div class="integration-row">
+                <div>
+                  <strong>{{ profile.name }}</strong>
+                  <div class="small-text">
+                    {{ profile.slug }} · {{ profile.providerId }}/{{ profile.model }}
+                    <span v-if="profile.slug === 'general'"> · global</span>
+                  </div>
+                  <div class="small-text">
+                    vínculos ativos: {{ profile.bindingCount }}
+                    <span v-if="profile.reserved"> · perfil obrigatório</span>
+                  </div>
+                </div>
+                <div class="integration-actions">
+                  <v-btn size="small" variant="text"
+                    :disabled="profileEditBusy || profileDeleteBusy"
+                    @click="openProfileEditor(profile)">Editar</v-btn>
+                  <v-btn size="small" variant="text" color="error"
+                    :disabled="!profile.deletable || profileEditBusy ||
+                      profileDeleteBusy"
+                    :title="profile.reserved
+                      ? 'O perfil global é obrigatório'
+                      : profile.bindingCount
+                        ? 'Remova os vínculos antes de excluir'
+                        : 'Excluir perfil'"
+                    @click="requestDeleteProfile(profile)">Excluir</v-btn>
+                </div>
               </div>
             </v-card-text>
           </v-card>
@@ -1491,6 +1544,73 @@ onMounted(async () => {
           <v-spacer/>
           <v-btn variant="text" :disabled="integrationBusy"
             @click="integrationsDialog = false">Fechar</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="profileEditDialog" max-width="700" persistent>
+      <v-card v-if="profileEditTarget" title="Editar perfil de inferência">
+        <v-card-text>
+          <div class="profile-create-grid">
+            <v-text-field v-model="profileEditName" label="Nome"
+              variant="outlined" density="compact" hide-details/>
+            <v-text-field v-model="profileEditSlug" label="Slug"
+              variant="outlined" density="compact" hide-details
+              :disabled="profileEditTarget?.reserved"/>
+            <v-select
+              v-model="profileEditProvider"
+              :items="aiProviderItems"
+              label="Provider"
+              variant="outlined" density="compact" hide-details
+              @update:model-value="onProfileEditProviderChanged"/>
+            <v-select
+              v-model="profileEditConnectionId"
+              :items="profileEditConnectionItems"
+              label="Conexão"
+              variant="outlined" density="compact" hide-details
+              :disabled="!profileEditProvider"
+              @update:model-value="onProfileEditConnectionChanged"/>
+            <v-select v-if="profileEditModelItems.length"
+              v-model="profileEditModel"
+              :items="profileEditModelItems"
+              label="Modelo"
+              variant="outlined" density="compact" hide-details/>
+            <v-text-field v-else
+              v-model="profileEditModel"
+              label="Modelo"
+              variant="outlined" density="compact" hide-details/>
+          </div>
+          <div v-if="profileEditTarget?.reserved" class="small-text mt-3">
+            O slug <strong>general</strong> é reservado porque este perfil é o
+            fallback global obrigatório do JARVIS.
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn variant="text" :disabled="profileEditBusy"
+            @click="profileEditDialog = false">Cancelar</v-btn>
+          <v-btn color="primary" :loading="profileEditBusy"
+            :disabled="profileEditBusy || !profileEditName.trim() ||
+              !profileEditSlug.trim() || !profileEditProvider ||
+              !profileEditConnectionId || !profileEditModel.trim()"
+            @click="saveProfileEdit">Salvar alterações</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog :model-value="Boolean(profileDeleteTarget)" max-width="480" persistent>
+      <v-card v-if="profileDeleteTarget" title="Excluir perfil de inferência?">
+        <v-card-text>
+          O perfil <strong>{{ profileDeleteTarget.name }}</strong> será removido.
+          Esta operação só é permitida quando não existem vínculos ativos.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn variant="text" :disabled="profileDeleteBusy"
+            @click="profileDeleteTarget = null">Cancelar</v-btn>
+          <v-btn color="error" :loading="profileDeleteBusy"
+            :disabled="profileDeleteBusy"
+            @click="confirmDeleteProfile">Excluir perfil</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -1627,9 +1747,7 @@ html, body, #app { height: 100%; margin: 0; }
 .composer { display: flex; align-items: end; gap: 14px; padding: 18px 26px 26px;
   border-top: 1px solid #243441; }
 .composer .v-input { flex: 1; }
-.ai-selector { display: grid;
-  grid-template-columns: 210px 140px 165px minmax(185px, 1fr) auto;
-  gap: 10px; min-width: 840px; align-items: center; }
+.ai-selector { width: min(360px, 100%); }
 .inference-resolution { margin-top: 4px; color: #79b9b5; }
 .profile-create-grid { display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
