@@ -204,3 +204,59 @@ def test_deleting_conversation_removes_its_inference_binding(bridge_env):
     ) is None
     assert profiles.get_binding(scope_type="global") is not None
 
+def test_updating_bound_profile_primary_does_not_mutate_general(bridge_env):
+    path, bridge, boot, secrets = bridge_env
+    anthropic = _anthropic(path / "jarvis.sqlite3", secrets)
+    profiles = InferenceProfileStore(path / "jarvis.sqlite3")
+    general = profiles.get_by_slug("general")
+    coding = profiles.create_profile(
+        "coding-deep",
+        "Coding profundo",
+        connection_id=boot["aiConnectionId"],
+        model="gpt-6-luna",
+        requirements={
+            "streaming": True,
+            "structured_output": True,
+        },
+        constraints={"locality": "cloud_allowed"},
+    )
+
+    result = json.loads(bridge.updateInferenceProfilePrimary(
+        coding["id"],
+        "anthropic",
+        anthropic["id"],
+        "claude-sonnet-5-5",
+    ))
+
+    assert result["ok"] is True
+    assert result["profile"]["providerId"] == "anthropic"
+    assert result["profile"]["connectionId"] == anthropic["id"]
+    assert result["profile"]["model"] == "claude-sonnet-5-5"
+
+    unchanged_general = profiles.get_profile(general["id"])
+    assert unchanged_general["configuration"]["primary"] == {
+        "connection_id": boot["aiConnectionId"],
+        "model": "gpt-6-luna",
+    }
+
+
+def test_update_profile_rejects_provider_connection_mismatch(bridge_env):
+    path, bridge, boot, secrets = bridge_env
+    anthropic = _anthropic(path / "jarvis.sqlite3", secrets)
+    profiles = InferenceProfileStore(path / "jarvis.sqlite3")
+    coding = profiles.create_profile(
+        "coding-deep",
+        "Coding profundo",
+        connection_id=boot["aiConnectionId"],
+        model="gpt-6-luna",
+    )
+
+    result = json.loads(bridge.updateInferenceProfilePrimary(
+        coding["id"],
+        "openai",
+        anthropic["id"],
+        "claude-sonnet-5-5",
+    ))
+
+    assert result["ok"] is False
+
