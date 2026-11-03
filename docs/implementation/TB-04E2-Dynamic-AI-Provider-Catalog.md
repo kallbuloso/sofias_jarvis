@@ -1,6 +1,6 @@
 # JARVIS — TB-04E2 Dynamic AI Provider Catalog
 
-**Status:** IMPLEMENTED / AWAITING REGRESSION + WINDOWS SMOKE
+**Status:** FUNCTIONALLY ACCEPTED BY OWNER / REMAINING FINAL SECURITY GATES
 **Branch:** `feat/tb-04-providers-connections`
 **Baseline:** CONTRACT-04, CONTRACT-07, TB-04C LiteLLM parity, TB-04E1 diagnostics.
 
@@ -48,3 +48,19 @@ For the same reason, `get_valid_models()` is not treated as proof of per-Connect
 8. Repeat TB-04E1 three-probe diagnostics on the configured Gemini Connection and separate provider/model faults from schema/streaming faults.
 
 No PRODUCT DONE claim until these checks and real Windows/credential smoke pass.
+
+## Owner validation evidence — 2026-11-03
+
+The owner confirmed that the Python regression, frontend production build and manually exercised desktop checks passed.
+
+Observed in supplied Windows desktop screenshots:
+
+- The LiteLLM catalog loads and reports **158 providers catalog-only**.
+- Existing Anthropic and Google Gemini Connections are configured, enabled and reported `available`.
+- The existing OpenAI Connection is configured and enabled with `availability=unknown`; OpenAI has no current authenticated status-check flow in this TB-04 implementation, so the state is intentionally not promoted to available.
+- Gemini `gemini-3.5-flash` diagnostic on LiteLLM 1.106.6: `plain=OK (1269ms)`, `structured=OK (2462ms)`, `streaming=OK (2209ms)`, `first_token=2183ms`.
+- A Gemini-bound Conversation profile produced the expected text response `funcionou` for the owner's test prompt.
+
+**Decision:** TB-04E2 catalog/form functional acceptance recorded. This does not assert that a new Connection was created and verified during this smoke, that every LiteLLM provider is connectable, that the Windows vault exposure paths were re-audited, or that TB-04 overall has satisfied the Product Done gate.
+
+**UX follow-up:** the alphabetic autocomplete surfaces a long run of unsupported `catalog_only` entries before manageable providers. Prefer a distinct supported group or sort connectable entries first in a later UI refinement, without changing Connection Manager trust boundaries.
