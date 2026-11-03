@@ -26,6 +26,11 @@ class ConnectionManager:
     def providers(self) -> list[dict]:
         return self.registry.list()
 
+    def ai_catalog(self) -> list[dict]:
+        """Read-only SDK discovery; only trusted registered adapters connect."""
+        from jarvis.connections.catalog import LiteLLMProviderCatalog
+        return LiteLLMProviderCatalog(registry=self.registry).list()
+
     def _public(self, item: dict, *, configured: bool) -> dict:
         descriptor = self.registry.get(item["provider_id"])
         return {
